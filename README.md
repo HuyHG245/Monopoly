@@ -1,5 +1,4 @@
-Currently Only Support Vietnamese
-Hiện tại chỉ hỗ trợ Tiếng Việt
+Currently Only Support Vietnamese | Hiện tại chỉ hỗ trợ Tiếng Việt
 
 ĐỂ KHỞI ĐỘNG SERVER:
 - Chạy server.py
@@ -42,32 +41,3 @@ TỔNG QUAN VỀ GAME MONOPOLY
 - Đồng hồ đếm ngược được Chủ phòng thiết lập tính bằng phút và hiển thị liên tục trên màn hình của tất cả người chơi.
 - Bảng xếp hạng (Leaderboard) tự động kích hoạt khi hết giờ hoặc khi chỉ còn một người chưa phá sản.
 - Hệ thống tính Tổng Tài Sản (Net Worth) cộng dồn tiền mặt, 100% giá đất gốc, 50% giá đất cầm cố và 100% chi phí xây nhà để tìm ra người chiến thắng.
-
---------------------------------------------------
-
-THIẾT KẾ CẤU TRÚC THƯ MỤC DỰ ÁN
-
-Monopoly_Project/
-|
-|-- server.py                 [File khởi chạy chính, thiết lập Flask và Socket.IO host tại địa chỉ 0.0.0.0, xử lý luồng nhận/gửi dữ liệu]
-|
-|-- core/                     
-|   |-- __init__.py
-|   |-- game_manager.py       [Quản lý vòng lặp Turn, đồng hồ đếm ngược, kho tài nguyên nhà, và tính toán Net Worth]
-|   |-- banking_unit.py       [Xử lý tự động việc trừ tiền, chuyển khoản, luật cầm cố và trạng thái phá sản]
-|   |-- dice_system.py        [Quản lý thuật toán tung xúc xắc thường, xúc xắc đỏ và luật vào tù]
-|   |-- auction.py            [Xử lý hệ thống đếm giờ đấu giá và thuật toán tìm người thắng cuộc]
-|   |-- trading.py            [Xử lý trạng thái tạm dừng game và đồng bộ giao dịch tài sản giữa hai người chơi]
-|
-|-- models/                   
-|   |-- __init__.py
-|   |-- player.py             [Định nghĩa đối tượng Người chơi: id, tên, số dư, tài sản, trạng thái tù]
-|   |-- spaces.py             [Định nghĩa đối tượng Ô đất, Trạm, Tiện ích và sự thay đổi trạng thái sở hữu]
-|
-|-- data/                     
-|   |-- board_data.json       [Database tĩnh chứa thông số 40 ô cờ, giá đất nền và giá xây nhà]
-|
-|-- templates/                
-    |-- index.html            [Khung giao diện kết hợp Bàn cờ trực quan, Bảng điều khiển Ngân hàng và Màn hình Lobby]
-    |-- style.css             [Bộ quy tắc định dạng Responsive đảm bảo bố cục tương thích trên cả màn hình máy tính và điện thoại]
-    |-- app.js                [Kịch bản frontend lắng nghe sự kiện, vẽ chuyển động, cập nhật tài sản và xử lý pop-up giao dịch]

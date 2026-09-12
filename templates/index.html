@@ -1,0 +1,1304 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TSM Monopoly</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; background: #121212; color: #fff; text-align: center; margin: 0; padding: 10px; overflow-x: hidden; }
+        .lobby-box { max-width: 400px; margin: 50px auto; background: #1e1e1e; padding: 20px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
+        input[type="text"], input[type="number"], select, button { width: 90%; padding: 10px; margin: 10px 0; border-radius: 5px; border: none; font-size: 14px; font-weight: bold; cursor: pointer; box-sizing: border-box;}
+        button { background: #ff4757; color: white; }
+        button:hover:not(:disabled) { filter: brightness(1.1); }
+        button:disabled { background: #555 !important; color: #888 !important; cursor: not-allowed; }
+        
+        #game-board-container { display: none; width: 100%; max-width: 1750px; margin: 0 auto; box-sizing: border-box; }
+        #game-board { display: flex; flex-wrap: nowrap; gap: 20px; justify-content: center; align-items: stretch; width: 100%; }
+        
+        #board-container { 
+            position: relative; 
+            width: 780px; 
+            height: 780px; 
+            background-image: url("{{ url_for('static', filename='board.jpg') }}"); 
+            background-size: cover; 
+            border-radius: 8px; 
+            box-shadow: 0 0 20px rgba(0,0,0,0.8); 
+            flex-shrink: 0; 
+            image-rendering: -webkit-optimize-contrast;
+            image-rendering: crisp-edges;
+            filter: contrast(1.05) saturate(1.1);
+        }
+        
+        .panel-container { background: #1e1e1e; padding: 15px; border-radius: 8px; text-align: left; display: flex; flex-direction: column; box-sizing: border-box; height: 780px; }
+        #control-panel { width: 380px; flex-shrink: 0; }
+        #stats-panel { width: 420px; flex-shrink: 0; overflow-y: auto; overflow-x: hidden; }
+
+        /* TOKEN DI CHUYỂN TỐC ĐỘ 100ms */
+        .player-token { position: absolute; width: 3vmin; height: 3vmin; max-width: 28px; max-height: 28px; border-radius: 50%; border: 2px solid #fff; transform: translate(-50%, -50%); transition: left 0.1s linear, top 0.1s linear; z-index: 10; pointer-events: none; }
+        .player-tag { display: inline-block; padding: 8px 15px; margin: 5px; border-radius: 5px; font-weight: bold; }
+        
+        .custom-popup { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #222; border: 2px solid #ff4757; padding: 20px; border-radius: 10px; z-index: 1000; width: 90%; max-width: 450px; box-shadow: 0 5px 15px rgba(0,0,0,0.9); text-align: center; box-sizing: border-box;}
+        #build-menu-popup, #liquidation-popup, #inherit-popup, #trade-select-modal, #leaderboard-popup, #player-select-popup { border-color: #f1c40f; }
+        .build-item { background: #333; padding: 10px; margin-bottom: 10px; border-radius: 5px; display: flex; justify-content: space-between; align-items: center; text-align: left;}
+        
+        #pause-overlay { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 500; border-radius: 8px; align-items: center; justify-content: center; flex-direction: column;}
+
+        /* XÚC XẮC 3D */
+        #dice-overlay { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); z-index: 100; justify-content: center; align-items: center; gap: 40px; border-radius: 8px; }
+        .dice-scene { width: 60px; height: 60px; perspective: 400px; }
+        .cube { width: 100%; height: 100%; position: relative; transform-style: preserve-3d; }
+        .cube__face { position: absolute; width: 60px; height: 60px; background: #fff; border: 2px solid #ccc; border-radius: 8px; display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); box-shadow: inset 0 0 15px rgba(0,0,0,0.2); box-sizing: border-box; padding: 6px; }
+        .cube-special .cube__face { background: #f1c40f; border-color: #d4ac0d; } 
+        .dot { width: 12px; height: 12px; background: #e74c3c; border-radius: 50%; box-shadow: inset 0 3px 5px rgba(0,0,0,0.5); align-self: center; justify-self: center; }
+        .cube-special .dot { background: #2c3e50; } 
+        .symbol { font-size: 28px; grid-area: 1 / 1 / 4 / 4; display: flex; align-items: center; justify-content: center; }
+        .cube__face--front  { transform: rotateY(  0deg) translateZ(30px); }
+        .cube__face--back   { transform: rotateY(180deg) translateZ(30px); }
+        .cube__face--right  { transform: rotateY( 90deg) translateZ(30px); }
+        .cube__face--left   { transform: rotateY(-90deg) translateZ(30px); }
+        .cube__face--top    { transform: rotateX( 90deg) translateZ(30px); }
+        .cube__face--bottom { transform: rotateX(-90deg) translateZ(30px); }
+        
+        .face-1 .dot { grid-area: 2 / 2; }
+        .face-2 .dot:nth-child(1) { grid-area: 1 / 1; }
+        .face-2 .dot:nth-child(2) { grid-area: 3 / 3; }
+        .face-3 .dot:nth-child(1) { grid-area: 1 / 1; }
+        .face-3 .dot:nth-child(2) { grid-area: 2 / 2; }
+        .face-3 .dot:nth-child(3) { grid-area: 3 / 3; }
+        .face-4 .dot:nth-child(1) { grid-area: 1 / 1; }
+        .face-4 .dot:nth-child(2) { grid-area: 1 / 3; }
+        .face-4 .dot:nth-child(3) { grid-area: 3 / 1; }
+        .face-4 .dot:nth-child(4) { grid-area: 3 / 3; }
+        .face-5 .dot:nth-child(1) { grid-area: 1 / 1; }
+        .face-5 .dot:nth-child(2) { grid-area: 1 / 3; }
+        .face-5 .dot:nth-child(3) { grid-area: 2 / 2; }
+        .face-5 .dot:nth-child(4) { grid-area: 3 / 1; }
+        .face-5 .dot:nth-child(5) { grid-area: 3 / 3; }
+        .face-6 .dot:nth-child(1) { grid-area: 1 / 1; }
+        .face-6 .dot:nth-child(2) { grid-area: 2 / 1; }
+        .face-6 .dot:nth-child(3) { grid-area: 3 / 1; }
+        .face-6 .dot:nth-child(4) { grid-area: 1 / 3; }
+        .face-6 .dot:nth-child(5) { grid-area: 2 / 3; }
+        .face-6 .dot:nth-child(6) { grid-area: 3 / 3; }
+
+        /* GIAO DIỆN THẺ BÀI CHUẨN 3D */
+        .inventory-container { display: flex; flex-wrap: wrap; gap: 20px 5px; padding: 10px 5px 40px 5px; }
+        .property-group { display: flex; margin-right: 15px; }
+        .card-container { width: 130px; height: 205px; perspective: 1000px; cursor: pointer; margin-right: -95px; transition: transform 0.3s ease; position: relative; }
+        .card-container:hover { transform: translateY(-25px); z-index: 50 !important; }
+        .card-container.is-tooltip { margin-right: 0; cursor: default; }
+        .card-container.is-tooltip:hover { transform: none; z-index: inherit !important; }
+        
+        .card-inner { width: 100%; height: 100%; position: relative; transition: transform 0.6s cubic-bezier(0.4, 0.2, 0.2, 1); transform-style: preserve-3d; }
+        .card-container.is-flipped .card-inner { transform: rotateY(180deg); }
+        .card-front, .card-back { width: 100%; height: 100%; position: absolute; backface-visibility: hidden; border-radius: 6px; box-shadow: 0 4px 8px rgba(0,0,0,0.5); box-sizing: border-box; }
+        
+        .card-front { background-color: #fff; border: 2px solid #000; padding: 4px; display: flex; flex-direction: column; color: #000; }
+        .front-border { border: 1px solid #000; height: 100%; display: flex; flex-direction: column; box-sizing: border-box; justify-content: space-between; }
+        .card-header { border: 1px solid #000; margin: 4px; padding: 6px 0; text-align: center; }
+        .card-header h4 { margin: 0; font-size: 7px; letter-spacing: 0.5px; font-weight: normal; }
+        .card-header h2 { margin: 2px 0 0 0; font-size: 11px; text-transform: uppercase; line-height: 1.1; }
+        .card-body { padding: 0 4px; font-size: 8px; flex-grow: 1; display: flex; flex-direction: column; justify-content: space-evenly; }
+        .rent-line { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;}
+        .rent-title { text-align: center; margin-bottom: 6px; font-size: 10px; }
+        .card-footer { border-top: 1px solid #000; margin: 0 4px 4px 4px; padding-top: 3px; font-size: 7px; }
+        
+        .card-back { background-color: #1a1a1a; border: 2px solid #fff; transform: rotateY(180deg); padding: 6px; color: #f1c40f; }
+        .back-border { border: 2px solid #f1c40f; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 10px; box-sizing: border-box; background: linear-gradient(180deg, #222 0%, #111 100%); }
+        .back-border h2 { margin: 0 0 10px 0; font-size: 12px; letter-spacing: 1px; color:#fff; }
+        .mortgage-text { font-size: 7px; line-height: 1.4; margin-bottom: 3px; color:#aaa;}
+        .mortgage-value { font-size: 12px; font-weight: bold; margin-bottom: 10px; }
+        .small-note { font-size: 5px; color: #777; margin-top: 10px; font-style: italic; }
+
+        /* GIAO DIỆN THẺ TĨNH 2D (CHỐNG LỖI GHOST KHI KÉO THẢ) */
+        .card-static-front { background-color: #fff; border: 2px solid #000; padding: 4px; display: flex; flex-direction: column; color: #000; border-radius: 6px; box-sizing: border-box; width: 100%; height: 100%; box-shadow: 0 4px 8px rgba(0,0,0,0.5); }
+        .card-static-back { background-color: #1a1a1a; border: 2px solid #fff; padding: 6px; color: #f1c40f; border-radius: 6px; box-sizing: border-box; width: 100%; height: 100%; opacity: 0.85; box-shadow: 0 4px 8px rgba(0,0,0,0.5); }
+
+        /* KÉO THẢ TRONG ĐÀM PHÁN */
+        .trade-draggable { cursor: grab !important; }
+        .trade-draggable:active { cursor: grabbing !important; }
+
+        @media (max-width: 1200px) {
+            #game-board { flex-direction: column; align-items: center; gap: 15px; }
+            #board-container { width: 90vw; height: 90vw; max-width: 700px; max-height: 700px; }
+            .panel-container { height: auto; width: 90vw; max-width: 700px; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="login-screen" class="lobby-box">
+        <h2>TSM Monopoly</h2>
+        <input type="text" id="player-name" placeholder="Tên nhân vật..." maxlength="15">
+        <select id="player-color">
+            <option value="red" data-name="Màu Đỏ">Màu Đỏ</option> 
+            <option value="blue" data-name="Màu Xanh Dương">Màu Xanh Dương</option>
+            <option value="green" data-name="Màu Xanh Lá">Màu Xanh Lá</option> 
+            <option value="yellow" data-name="Màu Vàng">Màu Vàng</option>
+            <option value="purple" data-name="Màu Tím">Màu Tím</option> 
+            <option value="orange" data-name="Màu Cam">Màu Cam</option>
+            <option value="hotpink" data-name="Màu Hồng">Màu Hồng</option>
+        </select>
+        <button onclick="joinGame()" style="background: #e74c3c;">Vào Phòng</button>
+        <button onclick="spectateGame()" style="background: #7f8c8d; margin-top: 10px;">👁️ Quan sát ván đấu</button>
+    </div>
+    
+    <div id="waiting-room" class="lobby-box" style="display: none;">
+        <h2>Phòng chờ kết nối</h2>
+        <div id="players-list" style="margin-bottom: 15px; display: flex; flex-direction: column; gap: 8px;"></div>
+        <div id="host-settings" style="display: none; background: #2a2a2a; padding: 12px; border-radius: 6px; margin-top: 12px; text-align: left;">
+            <h4 style="margin: 0 0 8px 0; color: #f1c40f;">Cài Đặt Ván Đấu (Host)</h4>
+            <div style="display: flex; align-items: center; gap: 10px; font-size: 14px; margin-bottom: 8px;">
+                <input type="checkbox" id="setting-unlimited" onchange="toggleUnlimitedTime()" style="width: 20px; height: 20px; margin: 0;">
+                <label for="setting-unlimited" style="cursor: pointer;">Chơi tự do (Vô hạn thời gian)</label>
+            </div>
+            <label style="font-size: 13px; display: block; margin-bottom: 3px;">Thời lượng ván đấu (phút):</label>
+            <input type="number" id="setting-duration" value="30" min="5" max="180" onchange="updateSettings()" style="width: 95%; padding: 8px; margin-bottom: 10px;">
+            <div style="display: flex; align-items: center; gap: 10px; font-size: 14px;">
+                <input type="checkbox" id="setting-dice" checked onchange="updateSettings()" style="width: 20px; height: 20px; margin: 0;">
+                <label for="setting-dice" style="cursor: pointer; font-weight: bold;">Bật Xúc Xắc Đặc Biệt</label>
+            </div>
+        </div>
+        <button id="ready-btn" style="display: none; margin-top: 15px;" onclick="socket.emit('toggle_ready')">Sẵn Sàng</button>
+        <button id="start-btn" style="background: #2ed573; display: none; margin-top: 15px;" onclick="startGame()">Bắt Đầu Ván Đấu</button>
+        <button id="leave-lobby-btn" onclick="leaveLobby()" style="background: #c0392b; margin-top: 10px;">Rời Phòng</button>
+    </div>
+
+    <!-- POPUP HỆ THỐNG -->
+    <div id="player-select-popup" class="custom-popup" style="border-color: #3498db; z-index: 2500;">
+        <h3 style="color: #3498db; margin-top: 0;">🤝 Chọn Người Chơi</h3>
+        <p id="player-select-text" style="font-size: 14px; margin-bottom: 10px;"></p>
+        <div id="player-select-list" style="display: flex; flex-direction: column; gap: 8px; margin: 15px 0; max-height: 200px; overflow-y: auto;"></div>
+        <button onclick="submitCardTarget()" id="player-select-confirm-btn" style="background: #27ae60; width: 100%; padding: 10px;" disabled>Xác Nhận</button>
+    </div>
+
+    <div id="timeout-decision-popup" class="custom-popup" style="border-color: #e74c3c; z-index: 2100;">
+        <h2 style="color: #e74c3c; margin-top: 0;">⏱️ HẾT GIỜ!</h2>
+        <p>Thời gian ván đấu đã kết thúc. Bạn muốn làm gì tiếp theo?</p>
+        <p style="color: #f1c40f; font-size: 13px; font-weight: bold; margin-bottom: 15px;">Tự động kết thúc sau: <span id="timeout-decision-countdown">30</span>s</p>
+        <div style="margin: 15px 0;"><input type="number" id="extra-time-input" placeholder="Số phút muốn thêm..." min="1" value="10" style="width: 80%; padding: 8px;"></div>
+        <div style="display: flex; gap: 10px;">
+            <button onclick="addExtraTime()" style="background: #27ae60; flex: 1;">Gia hạn thời gian</button>
+            <button onclick="document.getElementById('timeout-decision-popup').style.display='none'; stopGame();" style="background: #c0392b; flex: 1;">Tổng kết ván đấu</button>
+        </div>
+    </div>
+
+    <div id="leaderboard-popup" class="custom-popup" style="border-color: #f1c40f; width: 500px; z-index: 2000;">
+        <h2 style="color: #f1c40f; margin-top: 0;">🏆 TỔNG KẾT VÁN ĐẤU 🏆</h2>
+        <div id="leaderboard-list" style="max-height: 300px; overflow-y: auto; text-align: left; margin-bottom: 15px;"></div>
+        <button onclick="closeLeaderboard()" style="background: #3498db; width: 100%; padding: 10px;">Quay Về Sảnh</button>
+    </div>
+
+    <div id="victory-popup" class="custom-popup" style="border-color: #2ed573; z-index: 3000; width: 500px;">
+        <h1 style="color: #2ed573; font-size: 36px; margin-top: 0; text-shadow: 0 0 10px rgba(46, 213, 115, 0.5);">🎉 CHIẾN THẮNG 🎉</h1>
+        <h2 id="victory-winner" style="color: #fff; font-size: 30px; margin: 10px 0;">Người Chơi</h2>
+        <p style="font-size: 18px; color: #ccc;">Tổng Tài Sản: <b id="victory-assets" style="color: #f1c40f; font-size: 24px;">0<s>M</s></b></p>
+        <p style="color: #aaa; font-size: 13px; margin-top: 20px;">Đang chuẩn bị Bảng xếp hạng...</p>
+    </div>
+
+    <div id="bus-popup" class="custom-popup" style="border-color: #3498db;">
+        <h3 style="color: #3498db; margin-top: 0;">🚌 Trạm Xe Buýt</h3>
+        <p>Bạn đã tung được Xe Buýt. Hãy chọn đích đến:</p>
+        <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 15px;">
+            <button id="bus-btn-1" onclick="submitBus(1)" style="background: #2980b9; padding: 10px;"></button>
+            <button id="bus-btn-2" onclick="submitBus(2)" style="background: #2980b9; padding: 10px;"></button>
+            <button id="bus-btn-3" onclick="submitBus(3)" style="background: #27ae60; padding: 10px;"></button>
+        </div>
+    </div>
+
+    <div id="action-popup" class="custom-popup">
+        <h3 id="popup-title" style="color: #ff4757; margin-top: 0; display:none;">Thông Báo</h3>
+        <div id="popup-message" style="white-space: pre-line;">Nội dung...</div>
+        <div id="popup-buttons" style="margin-top: 15px; display: flex; gap: 10px;">
+            <button id="popup-buy-btn" onclick="buyProperty()" style="background: #2ed573; display: none; flex: 1;">Mua Đất</button>
+            <button id="popup-auction-btn" onclick="startAuction()" style="background: #3498db; display: none; flex: 1;">Đấu Giá</button>
+            <button id="popup-close-btn" onclick="confirmTurnEnd()" style="background: #e67e22; display: none; flex: 1;">Xong</button>
+        </div>
+    </div>
+
+    <!-- VOTE VÀ ĐẤU GIÁ POPUP -->
+    <div id="auction-vote-popup" class="custom-popup" style="border-color: #3498db;">
+        <h3 style="color: #3498db; margin-top: 0;">🗳️ Biểu Quyết Đấu Giá (<span id="vote-timer">10</span>s)</h3>
+        <p id="vote-space-name" style="font-weight: bold; font-size: 16px;">Đang đấu giá đất...</p>
+        <p style="font-size: 13px;">Hãy chọn hình thức đấu giá bạn muốn:</p>
+        <div style="display: flex; gap: 10px; margin-top: 15px;">
+            <button onclick="submitAuctionVote('normal')" style="background: #2980b9; flex: 1; padding: 10px;">Đấu Giá Thường</button>
+            <button onclick="submitAuctionVote('blind')" style="background: #8e44ad; flex: 1; padding: 10px;">Đấu Giá Mù</button>
+        </div>
+        <p id="vote-wait-msg" style="display: none; color: #f1c40f; margin-top: 10px; font-weight: bold;">Đang chờ biểu quyết...</p>
+    </div>
+
+    <div id="auction-popup" class="custom-popup" style="border-color: #3498db;">
+        <h3 style="color: #3498db; margin-top: 0;">📢 Đấu Giá (Còn <span id="auction-timer">10</span>s)</h3>
+        <p id="auction-space-name" style="font-weight: bold; font-size: 16px; margin: 5px 0;">Đang đấu giá đất...</p>
+        <div style="background: #1a1a1a; padding: 10px; border-radius: 5px; margin: 10px 0; text-align: left;">
+            <p style="margin: 4px 0;">💰 Giá: <span id="auction-current-bid" style="color: #f1c40f; font-weight: bold;">0<s>M</s></span></p>
+            <p style="margin: 4px 0;">👑 Top: <span id="auction-highest-bidder" style="color: #2ed573; font-weight: bold;">Chưa có</span></p>
+        </div>
+        <div id="auction-controls" style="margin-top: 10px;">
+            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px;">
+                <button onclick="placeBid(10000)" style="background: #27ae60; padding: 8px; margin:0;">+10,000<s>M</s></button>
+                <button onclick="placeBid(50000)" style="background: #27ae60; padding: 8px; margin:0;">+50,000<s>M</s></button>
+                <button onclick="placeBid(100000)" style="background: #2980b9; padding: 8px; margin:0;">+100,000<s>M</s></button>
+                <button onclick="foldAuction()" style="background: #c0392b; padding: 8px; margin:0;">Bỏ Cuộc</button>
+            </div>
+            <div style="display: flex; gap: 8px; margin-top: 8px;">
+                <input type="number" id="custom-normal-bid" placeholder="Nhập giá đấu..." style="flex: 2; margin: 0; padding: 8px;">
+                <button onclick="placeCustomNormalBid()" style="background: #8e44ad; flex: 1; padding: 8px; margin: 0;">Nâng Giá</button>
+            </div>
+        </div>
+        <p id="auction-observer-msg" style="display: none; color: #e74c3c; font-weight: bold; margin-top: 10px;">Đang quan sát...</p>
+    </div>
+
+    <div id="blind-auction-popup" class="custom-popup" style="border-color: #8e44ad;">
+        <h3 style="color: #8e44ad; margin-top: 0;">🕵️ Đấu Giá Mù (Còn <span id="blind-timer">15</span>s)</h3>
+        <p id="blind-space-name" style="font-weight: bold; font-size: 16px;">Đang đấu giá đất...</p>
+        <p style="font-size: 13px;">Nhập số tiền bạn muốn mua (không ai thấy giá của bạn). Chốt giá cao nhất sẽ thắng!</p>
+        <div id="blind-controls">
+            <input type="number" id="blind-bid-input" placeholder="Nhập số tiền (VD: 150000)" min="10000" style="width: 100%; text-align: center; font-size: 18px; padding: 10px; margin: 10px 0;" oninput="formatBlindBid()">
+            <p id="blind-bid-format" style="color: #2ed573; font-weight: bold; font-size: 18px; margin: 5px 0;">0<s>M</s></p>
+            <div style="display: flex; gap: 10px; margin-top: 15px;">
+                <button id="blind-submit-btn" onclick="submitBlindBid()" style="background: #27ae60; flex: 2; padding: 10px;">Chốt Giá</button>
+                <button id="blind-fold-btn" onclick="foldBlindAuction()" style="background: #c0392b; flex: 1; padding: 10px;">Bỏ Cuộc</button>
+            </div>
+        </div>
+        <p id="blind-wait-msg" style="display: none; color: #f1c40f; font-weight: bold; margin-top: 10px;">Đã chốt! Đang chờ đối thủ...</p>
+        <p id="blind-observer-msg" style="display: none; color: #e74c3c; font-weight: bold; margin-top: 10px;">Đang quan sát...</p>
+    </div>
+
+    <div id="build-menu-popup" class="custom-popup">
+        <h3 style="color: #f1c40f; margin-top: 0;">🚧 Quản Lý Đất 🚧</h3>
+        <p>Kho: <span id="res-houses" style="color:#2ed573">32</span> Nhà | <span id="res-hotels" style="color:#e74c3c">12</span> KS</p>
+        <div id="build-list" style="max-height: 250px; overflow-y: auto; margin-bottom: 15px;"></div>
+        <div style="display: flex; gap: 10px;">
+            <button id="build-undo-btn" onclick="undoBuildAction()" style="background: #e67e22; flex: 1;" disabled>Hủy Bước Cuối</button>
+            <button onclick="closeBuildMenu()" style="background: #7f8c8d; flex: 1;">Đóng Menu</button>
+        </div>
+    </div>
+
+    <div id="liquidation-popup" class="custom-popup" style="border-color: #e74c3c; width: 500px;">
+        <h3 style="color: #e74c3c; margin-top: 0;">⚠️ Không Đủ Tiền! ⚠️</h3>
+        <p id="liq-reason" style="margin: 5px 0; font-size: 13px;">Lý do...</p>
+        <div style="background: #1a1a1a; padding: 10px; border-radius: 5px; margin: 10px 0;">
+            <p style="margin: 4px 0; color: #ff7675;">Cần trả: <b id="liq-debt">0<s>M</s></b></p>
+            <p style="margin: 4px 0; color: #55efc4;">Đang có: <b id="liq-balance">0<s>M</s></b></p>
+            <p id="liq-status-text" style="margin: 4px 0; font-size: 14px; font-weight: bold;"></p>
+            <p style="margin: 4px 0; color: #3498db; font-size: 11px;">Quỹ xoay vòng tối đa: <b id="liq-max">0<s>M</s></b></p>
+        </div>
+        <div id="liq-list" style="max-height: 200px; overflow-y: auto; margin-bottom: 15px;"></div>
+        <div style="display: flex; gap: 10px;">
+            <button id="liq-undo-btn" onclick="undoLiquidation()" style="background: #e67e22; flex: 1; padding: 10px;" disabled>Hủy Bước Cuối</button>
+            <button id="liq-confirm-btn" onclick="confirmLiquidation()" disabled style="flex: 2; padding: 10px;">Xác Nhận Trả Nợ</button>
+        </div>
+    </div>
+
+    <div id="inherit-popup" class="custom-popup" style="border-color: #9b59b6;">
+        <h3 style="color: #9b59b6; margin-top: 0;">📜 Thừa Kế & Chuộc Đất</h3>
+        <p>Phí thừa kế bắt buộc: <b id="inherit-fee" style="color:#e74c3c;">0<s>M</s></b> đã được thanh toán.</p>
+        <p style="font-size: 13px;">Chọn đất muốn trả thêm tiền chuộc về ngay bây giờ (Không bắt buộc):</p>
+        <div id="inherit-list" style="max-height: 150px; overflow-y: auto; margin-bottom: 15px; text-align: left;"></div>
+        <button onclick="confirmInherit()" style="background: #27ae60; width: 100%; padding: 10px;">Xác Nhận</button>
+    </div>
+
+    <!-- ĐẠI TU GIAO DIỆN KÉO THẢ ĐÀM PHÁN -->
+    <div id="trade-select-modal" class="custom-popup" style="border-color: #3498db;">
+        <h3 style="color: #3498db; margin-top: 0;">🤝 Bắt Đầu Đàm Phán</h3>
+        <div id="trade-player-list" style="margin-bottom: 15px;"></div>
+        <button onclick="document.getElementById('trade-select-modal').style.display='none'" style="background: #7f8c8d; width: 100%;">Hủy</button>
+    </div>
+    
+    <div id="live-trade-modal" class="custom-popup" style="width: 95vw; height: 90vh; max-width: 1400px; display: none; flex-direction: row; padding: 0; background: #111; overflow: hidden; border-color: #f1c40f;">
+        <!-- PANEL BÊN TRÁI: ĐIỀU KHIỂN -->
+        <div style="width: 250px; background: #222; padding: 20px; border-right: 2px solid #f1c40f; display: flex; flex-direction: column; box-sizing: border-box;">
+            <h3 style="color: #f1c40f; margin-top:0; border-bottom: 1px solid #444; padding-bottom: 10px;">BÀN ĐÀM PHÁN</h3>
+            
+            <div style="margin-bottom: 20px; text-align: left;">
+                <b id="trade-name-2" style="color:#aaa; font-size: 16px;">Đối phương</b><span id="trade-lock-2"></span>
+                <input type="text" id="trade-money-2" placeholder="Tiền mặt (M)" disabled style="width: 100%; margin-top: 8px; font-size: 16px; background: #333; color: #fff; border:none; padding:10px; border-radius:4px;">
+            </div>
+            
+            <div style="margin-bottom: 20px; text-align: left;">
+                <b id="trade-name-1" style="color:#f1c40f; font-size: 16px;">Bạn</b><span id="trade-lock-1"></span>
+                <input type="text" id="trade-money-1" placeholder="Đề xuất tiền..." oninput="formatTradeMoney(this)" style="width: 100%; margin-top: 8px; font-size: 16px; padding:10px; border:none; border-radius:4px; font-weight: bold; color:#000;">
+            </div>
+            
+            <div style="flex-grow: 1;"></div>
+            <button id="trade-lock-btn" onclick="toggleTradeLock()" style="background: #f1c40f; width: 100%; padding: 15px; margin-bottom: 10px; font-size: 16px; color:#000;">Khóa Đề Xuất</button>
+            <button onclick="cancelLiveTrade()" style="background: #c0392b; width: 100%; padding: 15px; font-size: 16px;">Hủy Bỏ</button>
+        </div>
+        
+        <!-- PANEL BÊN PHẢI: KÉO THẢ THẺ BÀI -->
+        <div style="flex: 1; display: flex; flex-direction: column; background: #1a1a1a;">
+            <!-- Kho Bài Đối Phương -->
+            <div id="trade-opp-inv" style="height: 25%; padding: 10px; overflow-y: auto; display: flex; align-items: center; border-bottom: 2px dashed #444;"></div>
+            
+            <!-- Mặt Bàn Trao Đổi -->
+            <div style="height: 50%; display: flex; flex-direction: column; padding: 10px; background: #111; gap: 10px;">
+                <div id="trade-table-opp" style="flex: 1; border: 2px dashed #e74c3c; border-radius: 8px; padding: 10px; display: flex; gap: 10px; overflow-y: auto; align-items: center; background: rgba(231, 76, 60, 0.1); position: relative;"></div>
+                <div id="trade-table-my" ondrop="dropTrade(event, 'table')" ondragover="allowDrop(event)" style="flex: 1; border: 2px dashed #2ed573; border-radius: 8px; padding: 10px; display: flex; gap: 10px; overflow-y: auto; align-items: center; background: rgba(46, 213, 115, 0.1); position: relative;"></div>
+            </div>
+            
+            <!-- Kho Bài Của Bạn -->
+            <div id="trade-my-inv" ondrop="dropTrade(event, 'inventory')" ondragover="allowDrop(event)" style="height: 25%; padding: 10px; overflow-y: auto; display: flex; align-items: center; border-top: 2px solid #444;"></div>
+        </div>
+    </div>
+
+    <!-- GAME BOARD -->
+    <div id="game-board-container">
+        <div id="game-board">
+            
+            <div id="board-container">
+                <div id="territory-overlays" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5;"></div>
+                
+                <!-- XÚC XẮC 3D -->
+                <div id="dice-overlay">
+                    <h2 id="dice-roller-name" style="position: absolute; top: 25%; color: #f1c40f; font-size: 32px; text-shadow: 0 2px 10px rgba(0,0,0,1); z-index: 10; font-family: 'Arial Black', sans-serif;">Đang tung xúc xắc...</h2>
+                    <div class="dice-scene">
+                        <div id="cube1" class="cube">
+                            <div class="cube__face cube__face--front face-1"><div class="dot"></div></div>
+                            <div class="cube__face cube__face--back face-2"><div class="dot"></div><div class="dot"></div></div>
+                            <div class="cube__face cube__face--right face-3"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
+                            <div class="cube__face cube__face--left face-4"><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
+                            <div class="cube__face cube__face--top face-5"><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
+                            <div class="cube__face cube__face--bottom face-6"><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
+                        </div>
+                    </div>
+                    <div class="dice-scene">
+                        <div id="cube2" class="cube">
+                            <div class="cube__face cube__face--front face-1"><div class="dot"></div></div>
+                            <div class="cube__face cube__face--back face-2"><div class="dot"></div><div class="dot"></div></div>
+                            <div class="cube__face cube__face--right face-3"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
+                            <div class="cube__face cube__face--left face-4"><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
+                            <div class="cube__face cube__face--top face-5"><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
+                            <div class="cube__face cube__face--bottom face-6"><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
+                        </div>
+                    </div>
+                    <!-- XÚC XẮC ĐẶC BIỆT -->
+                    <div class="dice-scene" id="dice-scene-special" style="display:none;">
+                        <div id="cube3" class="cube cube-special">
+                            <div class="cube__face cube__face--front face-1"><div class="dot"></div></div>
+                            <div class="cube__face cube__face--back face-2"><div class="dot"></div><div class="dot"></div></div>
+                            <div class="cube__face cube__face--right face-3"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
+                            <div class="cube__face cube__face--left"><div class="symbol">🚌</div></div>
+                            <div class="cube__face cube__face--top"><div class="symbol">🚌</div></div>
+                            <div class="cube__face cube__face--bottom"><div class="symbol">🎩</div></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="pause-overlay">
+                    <h2 style="color: #f1c40f; margin-bottom: 5px;">⏸️ TẠM DỪNG</h2>
+                    <p id="pause-reason-text" style="color: #fff;"></p>
+                </div>
+            </div>
+            
+            <div class="panel-container" id="control-panel">
+                <div id="game-timer-container" style="text-align: center; margin-bottom: 8px; display: none;">
+                    <span style="font-size: 22px; font-weight: bold; color: #e74c3c;">⏱️ <span id="game-timer">00:00</span></span>
+                </div>
+
+                <div style="background: #222; padding: 8px; border-radius: 5px; margin-bottom: 8px;">
+                    <h4 style="margin: 0 0 4px 0; font-size: 13px;">Thứ tự lượt đi</h4>
+                    <div id="turn-order-list" style="font-size: 12px; color: #aaa;"></div>
+                    <div id="current-player-turn" style="font-weight: bold; color: #f1c40f; font-size: 14px; margin-top: 3px;">Đang chuẩn bị...</div>
+                </div>
+
+                <div id="player-controls-panel">
+                    <div style="display: flex; gap: 5px; margin-bottom: 8px;">
+                        <button onclick="socket.emit('toggle_pause')" style="background: #34495e; flex: 1; padding: 6px; font-size: 12px; margin:0;">⏸️ Dừng/Tiếp</button>
+                        <button onclick="requestTrade()" style="background: #2980b9; flex: 1; padding: 6px; font-size: 12px; margin:0;">🤝 Đàm Phán</button>
+                    </div>
+                    <button onclick="openBuildMenu()" style="background: #8e44ad; width: 100%; margin-bottom: 8px; padding: 6px; font-size: 12px; margin-top:0;">🏗️ Quản lý Đất (Xây/Chuộc)</button>
+                </div>
+
+                <div id="jail-controls" style="display: none; background: #333; padding: 10px; border-radius: 5px; margin-bottom: 10px;">
+                    <p style="margin: 0 0 8px 0; color: #f1c40f; font-size: 13px;">🔒 Bạn đang ở trong Tù</p>
+                    <div style="display: flex; gap: 5px;">
+                        <button onclick="socket.emit('pay_jail_fine')" style="background: #e67e22; flex: 1; padding: 6px; font-size: 12px; margin:0;">Trả 500,000<s>M</s> ra Tù</button>
+                        <button id="use-jail-card-btn" onclick="socket.emit('use_jail_card')" style="background: #27ae60; flex: 1; padding: 6px; font-size: 12px; margin:0;">Dùng Thẻ Ra Tù</button>
+                    </div>
+                </div>
+                
+                <div id="game-log" style="flex-grow: 1; overflow-y: auto; background: #121212; padding: 8px; font-size: 11px; border-radius: 5px; margin-bottom: 8px; border: 1px solid #333; min-height: 150px;"></div>
+                
+                <div>
+                    <button id="roll-dice-btn" onclick="rollDice()" style="background: #e67e22; width: 100%; display: none; font-size: 16px; padding: 12px; margin:0;">ĐỔ XÚC XẮC 🎲</button>
+                    <button id="surrender-btn" onclick="surrenderGame()" style="background: #e74c3c; width: 100%; margin-top: 6px; font-size: 12px; padding: 6px; display: none;">🏳️ Bỏ Cuộc (Nhận Thua)</button>
+                    <button id="stop-game-btn" onclick="confirmStopGame()" style="background: #c0392b; width: 100%; margin-top: 6px; font-size: 12px; padding: 6px; display: none;">🛑 Kết Thúc Ván</button>
+                </div>
+            </div>
+
+            <!-- CỘT 3: BẢNG TÀI SẢN -->
+            <div class="panel-container" id="stats-panel">
+                <h3 style="color: #f1c40f; margin-top: 0; text-align: center; border-bottom: 2px solid #333; padding-bottom: 8px; font-size: 15px;">📊 BẢNG TÀI SẢN</h3>
+                <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 10px; color: #aaa; background: #222; padding: 8px; border-radius: 5px;">
+                    <span>Kho Nhà: <b id="ui-houses" style="color:#2ed573">32</b></span> 
+                    <span>Kho KS: <b id="ui-hotels" style="color:#e74c3c">12</b></span>
+                </div>
+                <div id="players-stats" style="flex-grow: 1; overflow-y: auto; padding-right: 5px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let currentSpaceId = null; let hostSid = null; let isCurrentTurnDouble = false; let inheritUnmortgageIds = [];
+        let timerInterval = null; let currentBusData = null; let timeoutTriggered = false; let hostDecisionTimer = null; 
+        
+        let myTradeRole = null; let isTradeLocked = false; let isInLobby = false; let isSpectator = false; let selectedTargetSid = null;
+        let localMyProps = []; let localOppProps = []; let localMyInvData = []; let localOppInvData = [];
+
+        // HÀNG ĐỢI POPUP KHI ĐANG DI CHUYỂN
+        let pendingActionPopup = null;
+        let pendingBusMenu = null;
+
+        // LẮNG NGHE SỰ KIỆN ẨN TAB ĐỂ CHỐNG LỖI ANIMATION DỒN Ứ
+        document.addEventListener("visibilitychange", () => {
+            if (!document.hidden) {
+                document.getElementById('dice-overlay').style.display = 'none';
+                for(let sid in isMovingMap) { isMovingMap[sid] = false; }
+                socket.emit('request_full_state'); 
+            }
+        });
+
+        // HIỆU ỨNG HẠT
+        function shootMoneyConfetti() { if(document.hidden) return; confetti({ particleCount: 100, spread: 70, origin: { y: 0.1 }, colors: ['#f1c40f', '#2ed573', '#e67e22'], zIndex: 9999 }); }
+        function shootSmallConfetti() { if(document.hidden) return; confetti({ particleCount: 40, spread: 50, origin: { y: 0.6 }, zIndex: 9999 }); }
+        function shootFireworks() {
+            if(document.hidden) return;
+            var duration = 3 * 1000; var animationEnd = Date.now() + duration; var defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 9999 };
+            function randomInRange(min, max) { return Math.random() * (max - min) + min; }
+            var interval = setInterval(function() {
+                var timeLeft = animationEnd - Date.now();
+                if (timeLeft <= 0) return clearInterval(interval);
+                var particleCount = 50 * (timeLeft / duration);
+                confetti(Object.assign({}, defaults, { particleCount, origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 } }));
+                confetti(Object.assign({}, defaults, { particleCount, origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 } }));
+            }, 250);
+        }
+
+        // XÚC XẮC 3D LĂN
+        socket.on('show_dice_roll', (data) => {
+            if (document.hidden) return; 
+
+            document.getElementById('dice-roller-name').innerText = (data.roller ? data.roller : "Ai đó") + " đang tung xúc xắc...";
+
+            let overlay = document.getElementById('dice-overlay');
+            let cube1 = document.getElementById('cube1'); let cube2 = document.getElementById('cube2'); let cube3 = document.getElementById('cube3');
+            let sceneSpecial = document.getElementById('dice-scene-special');
+            
+            cube1.style.transition = 'none'; cube2.style.transition = 'none'; cube3.style.transition = 'none';
+            cube1.style.transform = `translateZ(-30px) rotateX(0deg) rotateY(0deg)`;
+            cube2.style.transform = `translateZ(-30px) rotateX(0deg) rotateY(0deg)`;
+            cube3.style.transform = `translateZ(-30px) rotateX(0deg) rotateY(0deg)`;
+
+            if (data.special_die) sceneSpecial.style.display = 'block'; else sceneSpecial.style.display = 'none';
+            overlay.style.display = 'flex'; 
+            
+            void cube1.offsetWidth;
+
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    let rx1 = 1440; let ry1 = 1440; let rx2 = 1440; let ry2 = 1440; 
+                    const rotations = { 1: {x: 0, y: 0}, 2: {x: 0, y: -180}, 3: {x: 0, y: -90}, 4: {x: 0, y: 90}, 5: {x: -90, y: 0}, 6: {x: 90, y: 0} };
+                    
+                    const specialRotations = { 1: {x: 0, y: 0}, 2: {x: 0, y: -180}, 3: {x: 0, y: -90}, 'Mr.Monopoly': {x: 90, y: 0} };
+
+                    let t1 = rotations[data.die1]; let t2 = rotations[data.die2];
+                    let trans = 'transform 1.5s cubic-bezier(0.1, 0.8, 0.2, 1)';
+                    cube1.style.transition = trans; cube2.style.transition = trans; cube3.style.transition = trans;
+                    
+                    cube1.style.transform = `translateZ(-30px) rotateX(${rx1 + t1.x}deg) rotateY(${ry1 + t1.y}deg)`;
+                    cube2.style.transform = `translateZ(-30px) rotateX(${rx2 + t2.x}deg) rotateY(${ry2 + t2.y}deg)`;
+                    
+                    if (data.special_die) {
+                        let rx3 = 1440; let ry3 = 1440; 
+                        let t3;
+                        if (data.special_die === 'Bus') {
+                            t3 = {x: 0, y: 90}; 
+                        } else {
+                            t3 = specialRotations[data.special_die] || {x: 0, y: 0}; 
+                        }
+                        cube3.style.transform = `translateZ(-30px) rotateX(${rx3 + t3.x}deg) rotateY(${ry3 + t3.y}deg)`;
+                    }
+
+                    setTimeout(() => { overlay.style.display = 'none'; }, 1800);
+                });
+            });
+        });
+
+        const CARD_DB = {
+            "Gdynia": { color: "Brown", rent: "20K", set: "40K", h1: "100K", h2: "300K", h3: "900K", h4: "1.6M", h: "2.5M", build: "500K", mort: "300K", unmort: "330K" },
+            "Taipei": { color: "Brown", rent: "40K", set: "80K", h1: "200K", h2: "600K", h3: "1.8M", h4: "3.2M", h: "4.5M", build: "500K", mort: "300K", unmort: "330K" },
+            "Tokyo": { color: "LightBlue", rent: "60K", set: "120K", h1: "300K", h2: "900K", h3: "2.7M", h4: "4M", h: "5.5M", build: "500K", mort: "500K", unmort: "550K" },
+            "Barcelona": { color: "LightBlue", rent: "60K", set: "120K", h1: "300K", h2: "900K", h3: "2.7M", h4: "4M", h: "5.5M", build: "500K", mort: "500K", unmort: "550K" },
+            "Athens": { color: "LightBlue", rent: "80K", set: "160K", h1: "400K", h2: "1M", h3: "3M", h4: "4.5M", h: "6M", build: "500K", mort: "600K", unmort: "660K" },
+            "Istanbul": { color: "Pink", rent: "100K", set: "200K", h1: "500K", h2: "1.5M", h3: "4.5M", h4: "6.25M", h: "7.5M", build: "1M", mort: "700K", unmort: "770K" },
+            "Kyiv": { color: "Pink", rent: "100K", set: "200K", h1: "500K", h2: "1.5M", h3: "4.5M", h4: "6.25M", h: "7.5M", build: "1M", mort: "700K", unmort: "770K" },
+            "Toronto": { color: "Pink", rent: "120K", set: "240K", h1: "600K", h2: "1.8M", h3: "5M", h4: "7M", h: "9M", build: "1M", mort: "800K", unmort: "880K" },
+            "Rome": { color: "Orange", rent: "140K", set: "280K", h1: "700K", h2: "2M", h3: "5.5M", h4: "7.5M", h: "9.5M", build: "1M", mort: "900K", unmort: "990K" },
+            "Shanghai": { color: "Orange", rent: "140K", set: "280K", h1: "700K", h2: "2M", h3: "5.5M", h4: "7.5M", h: "9.5M", build: "1M", mort: "900K", unmort: "990K" },
+            "Vancouver": { color: "Orange", rent: "160K", set: "320K", h1: "800K", h2: "2.2M", h3: "6M", h4: "8M", h: "10M", build: "1M", mort: "1M", unmort: "1.1M" },
+            "Sydney": { color: "Red", rent: "180K", set: "360K", h1: "900K", h2: "2.5M", h3: "7M", h4: "8.75M", h: "10.5M", build: "1.5M", mort: "1.1M", unmort: "1.21M" },
+            "New York": { color: "Red", rent: "180K", set: "360K", h1: "900K", h2: "2.5M", h3: "7M", h4: "8.75M", h: "10.5M", build: "1.5M", mort: "1.1M", unmort: "1.21M" },
+            "London": { color: "Red", rent: "200K", set: "400K", h1: "1M", h2: "3M", h3: "7.5M", h4: "9.25M", h: "11M", build: "1.5M", mort: "1.2M", unmort: "1.32M" },
+            "Beijing": { color: "Yellow", rent: "220K", set: "440K", h1: "1.1M", h2: "3.3M", h3: "8M", h4: "9.75M", h: "11.5M", build: "1.5M", mort: "1.3M", unmort: "1.43M" },
+            "Hong Kong": { color: "Yellow", rent: "220K", set: "440K", h1: "1.1M", h2: "3.3M", h3: "8M", h4: "9.75M", h: "11.5M", build: "1.5M", mort: "1.3M", unmort: "1.43M" },
+            "Jerusalem": { color: "Yellow", rent: "240K", set: "480K", h1: "1.2M", h2: "3.6M", h3: "8.5M", h4: "10.25M", h: "12M", build: "1.5M", mort: "1.4M", unmort: "1.54M" },
+            "Paris": { color: "Green", rent: "260K", set: "520K", h1: "1.3M", h2: "3.9M", h3: "9M", h4: "11M", h: "12.75M", build: "2M", mort: "1.5M", unmort: "1.65M" },
+            "Belgrade": { color: "Green", rent: "260K", set: "520K", h1: "1.3M", h2: "3.9M", h3: "9M", h4: "11M", h: "12.75M", build: "2M", mort: "1.5M", unmort: "1.65M" },
+            "Cape Town": { color: "Green", rent: "280K", set: "560K", h1: "1.5M", h2: "4.5M", h3: "10M", h4: "12M", h: "14M", build: "2M", mort: "1.6M", unmort: "1.76M" },
+            "Riga": { color: "DarkBlue", rent: "350K", set: "700K", h1: "1.75M", h2: "5M", h3: "11M", h4: "13M", h: "15M", build: "2M", mort: "1.75M", unmort: "1.93M" },
+            "Montreal": { color: "DarkBlue", rent: "500K", set: "1M", h1: "2M", h2: "6M", h3: "14M", h4: "17M", h: "20M", build: "2M", mort: "2M", unmort: "2.2M" },
+            
+            "Monopoly Rail": { isRail: true, rent: "250K", r2: "500K", r3: "1M", r4: "2M", mort: "1M", unmort: "1.1M" },
+            "Monopoly Air": { isRail: true, rent: "250K", r2: "500K", r3: "1M", r4: "2M", mort: "1M", unmort: "1.1M" },
+            "Monopoly Cruise": { isRail: true, rent: "250K", r2: "500K", r3: "1M", r4: "2M", mort: "1M", unmort: "1.1M" },
+            "Monopoly Space": { isRail: true, rent: "250K", r2: "500K", r3: "1M", r4: "2M", mort: "1M", unmort: "1.1M" },
+            
+            "Solar Energy": { isUtil: true, mort: "750K", unmort: "830K" },
+            "Wind Energy": { isUtil: true, mort: "750K", unmort: "830K" }
+        };
+
+        const SPACE_NAMES = [
+            "GO", "Gdynia", "Community Chest", "Taipei", "Income Tax", "Monopoly Rail", "Tokyo", "Chance", "Barcelona", "Athens",
+            "Jail / Just Visiting", "Istanbul", "Solar Energy", "Kyiv", "Toronto", "Monopoly Air", "Rome", "Community Chest", "Shanghai", "Vancouver",
+            "Free Parking", "Sydney", "Chance", "New York", "London", "Monopoly Cruise", "Beijing", "Hong Kong", "Wind Energy", "Jerusalem",
+            "Go To Jail", "Paris", "Belgrade", "Community Chest", "Cape Town", "Monopoly Space", "Chance", "Riga", "Super Tax", "Montreal"
+        ];
+
+        // TẮT 3D CHO THẺ KÉO THẢ TRONG ĐÀM PHÁN
+        function generateCardHTML(prop, isStatic = false, extraClasses = "", extraAttrs = "") {
+            let data = CARD_DB[prop.name] || {}; 
+            let isFlipped = (prop.is_mortgaged && !isStatic) ? 'is-flipped' : ''; 
+            let tooltipClass = isStatic ? 'is-tooltip' : '';
+            let colorHex = getColorHex(prop.color, prop.type);
+            
+            if (prop.type === 'Railroad') colorHex = '#2c3e50'; 
+            if (prop.type === 'Utility') colorHex = '#7f8c8d';
+
+            let frontContent = `<div class="front-border"><div class="card-header" style="background-color: ${colorHex};"><h4>TITLE DEED</h4><h2>${prop.name.toUpperCase()}</h2></div><div class="card-body"><div class="rent-title">Rent &nbsp;&nbsp;&nbsp; <s>M</s>${data.rent || 0}</div><div class="rent-line"><span>Rent with colour set</span> <span><s>M</s>${data.set || 0}</span></div><div class="rent-line"><span>Rent with <span style="color:#2ecc71">1 🏠</span></span> <span><s>M</s>${data.h1 || 0}</span></div><div class="rent-line"><span>Rent with <span style="color:#2ecc71">2 🏠</span></span> <span><s>M</s>${data.h2 || 0}</span></div><div class="rent-line"><span>Rent with <span style="color:#2ecc71">3 🏠</span></span> <span><s>M</s>${data.h3 || 0}</span></div><div class="rent-line"><span>Rent with <span style="color:#2ecc71">4 🏠</span></span> <span><s>M</s>${data.h4 || 0}</span></div><div class="rent-line"><span>Rent with <span style="color:#e74c3c">1 🏨</span></span> <span><s>M</s>${data.h || 0}</span></div></div><div class="card-footer"><div class="rent-line" style="margin-bottom: 2px;"><span>Houses cost</span> <span><s>M</s>${data.build || 0} each</span></div><div class="rent-line" style="flex-direction:column; align-items:flex-end;"><div style="width:100%; display:flex; justify-content:space-between;"><span>Hotels cost</span> <span><s>M</s>${data.build || 0} each</span></div><span style="font-size: 6px; color:#555; align-self: flex-end;">(Plus 4 houses)</span></div></div></div>`;
+            if (prop.type === 'Railroad') {
+                frontContent = `<div class="front-border"><div class="card-header" style="background-color: ${colorHex}; color: #fff;"><h4>TITLE DEED</h4><h2>${prop.name.toUpperCase()}</h2></div><div class="card-body" style="justify-content: flex-start; padding-top: 10px; font-size: 8px;"><div class="rent-line" style="margin-bottom:6px; font-weight:bold;"><span>RENT</span> <span><s>M</s>${data.rent || 0}</span></div><div class="rent-line" style="margin-bottom:4px;"><span>If 2 are owned</span> <span><s>M</s>${data.r2 || 0}</span></div><div class="rent-line" style="margin-bottom:4px;"><span>If 3 are owned</span> <span><s>M</s>${data.r3 || 0}</span></div><div class="rent-line" style="margin-bottom:4px;"><span>If 4 are owned</span> <span><s>M</s>${data.r4 || 0}</span></div></div><div class="card-footer" style="text-align:center;">Mortgage Value <s>M</s>${data.mort || 0}</div></div>`;
+            } else if (prop.type === 'Utility') {
+                frontContent = `<div class="front-border"><div class="card-header" style="background-color: ${colorHex}; color: #fff;"><h4>TITLE DEED</h4><h2>${prop.name.toUpperCase()}</h2></div><div class="card-body" style="justify-content: center; text-align: center; font-size: 8px; line-height: 1.5; padding: 10px;">If 1 Utility is owned, rent is <b>4x</b> amount shown on dice.<br><br>If both Utilities are owned, rent is <b>10x</b> amount shown on dice.<br><br><i>*Multiplied by 10,000</i></div><div class="card-footer" style="text-align:center;">Mortgage Value <s>M</s>${data.mort || 0}</div></div>`;
+            }
+
+            let backContent = `<div class="back-border"><h2>${prop.name.toUpperCase()}</h2><div class="mortgage-text">MORTGAGE VALUE</div><div class="mortgage-value"><s>M</s>${data.mort || '0'}</div><div class="mortgage-text">TO UNMORTGAGE,<br>PAY</div><div class="mortgage-value"><s>M</s>${data.unmort || '0'}</div><div class="small-note">Card must be turned this side up if property is mortgaged.</div></div>`;
+
+            let buildIndicator = "";
+            if (prop.hotel > 0 && !isStatic) buildIndicator = `<div style="position: absolute; top: -5px; right: -5px; background: #e74c3c; color: #fff; border-radius: 50%; width: 16px; height: 16px; font-size: 8px; display: flex; align-items: center; justify-content: center; z-index: 10; border: 1px solid #fff;">🏨</div>`;
+            else if (prop.houses > 0 && !isStatic) buildIndicator = `<div style="position: absolute; top: -5px; right: -5px; background: #2ecc71; color: #fff; border-radius: 50%; width: 16px; height: 16px; font-size: 10px; font-weight:bold; display: flex; align-items: center; justify-content: center; z-index: 10; border: 1px solid #fff;">${prop.houses}</div>`;
+
+            let innerContent = "";
+            if (isStatic) {
+                if (prop.is_mortgaged) {
+                    innerContent = `<div class="card-static-back">${backContent}</div>`;
+                } else {
+                    innerContent = `<div class="card-static-front">${frontContent}</div>`;
+                }
+            } else {
+                innerContent = `<div class="card-inner"><div class="card-front">${frontContent}</div><div class="card-back">${backContent}</div></div>`;
+            }
+
+            return `<div class="card-container ${isFlipped} ${tooltipClass} ${extraClasses}" ${extraAttrs}>${buildIndicator}${innerContent}</div>`;
+        }
+
+        socket.on('open_player_select', (data) => {
+            document.getElementById('player-select-text').innerHTML = data.text.replace(/\n/g, '<br>') + `<br>(Số tiền đền bù: ${data.amount.toLocaleString('en-US')}<s>M</s>)`;
+            const listDiv = document.getElementById('player-select-list'); listDiv.innerHTML = ""; selectedTargetSid = null; document.getElementById('player-select-confirm-btn').disabled = true;
+            data.players.forEach(p => { listDiv.innerHTML += `<button onclick="selectTargetPlayer('${p.sid}', this)" style="background: #333; border: 2px solid #555; padding: 10px; width: 100%; border-radius: 5px; font-weight: bold; color: #fff;">${p.name}</button>`; });
+            document.getElementById('player-select-popup').style.display = 'block'; document.getElementById('roll-dice-btn').style.display = 'none'; 
+        });
+
+        function selectTargetPlayer(sid, btn) { selectedTargetSid = sid; document.querySelectorAll('#player-select-list button').forEach(b => b.style.borderColor = '#555'); btn.style.borderColor = '#2ed573'; document.getElementById('player-select-confirm-btn').disabled = false; }
+        function submitCardTarget() { if (selectedTargetSid) { document.getElementById('player-select-popup').style.display = 'none'; socket.emit('submit_card_target', { target_sid: selectedTargetSid }); } }
+        socket.on('close_player_select', () => { document.getElementById('player-select-popup').style.display = 'none'; });
+
+        function getColorHex(colorName, type) {
+            if (type === 'Railroad') return '#34495e'; if (type === 'Utility') return '#7f8c8d'; 
+            const colors = { 'Brown': '#5d4037', 'LightBlue': '#00a8ff', 'Pink': '#fd79a8', 'Orange': '#e17055', 'Red': '#d63031', 'Yellow': '#f1c40f', 'Green': '#2ecc71', 'DarkBlue': '#003399' }; return colors[colorName] || '#ecf0f1';
+        }
+
+        socket.on('update_taken_colors', (takenColors) => {
+            const colorSelect = document.getElementById('player-color');
+            for (let i = 0; i < colorSelect.options.length; i++) {
+                if (takenColors.includes(colorSelect.options[i].value)) { colorSelect.options[i].disabled = true; colorSelect.options[i].text = colorSelect.options[i].getAttribute('data-name') + ' (Đã chọn)'; } 
+                else { colorSelect.options[i].disabled = false; colorSelect.options[i].text = colorSelect.options[i].getAttribute('data-name'); }
+            }
+            if (takenColors.includes(colorSelect.value)) { for (let i = 0; i < colorSelect.options.length; i++) { if (!colorSelect.options[i].disabled) { colorSelect.selectedIndex = i; break; } } }
+        });
+
+        function toggleUnlimitedTime() { const isUnlimited = document.getElementById('setting-unlimited').checked; document.getElementById('setting-duration').disabled = isUnlimited; updateSettings(); }
+        function joinGame() {
+            const colorSelect = document.getElementById('player-color'); if (colorSelect.options[colorSelect.selectedIndex].disabled) { alert("Màu này đã có người chọn! Vui lòng chọn màu khác."); return; }
+            const name = document.getElementById('player-name').value.trim(); if (name) socket.emit('join_room', { name: name, color: colorSelect.value });
+        }
+        
+        socket.on('room_joined', (data) => { 
+            if (data.status === 'success') { isInLobby = true; isSpectator = false; document.getElementById('login-screen').style.display = 'none'; document.getElementById('waiting-room').style.display = 'block'; document.getElementById('player-controls-panel').style.display = 'block'; document.getElementById('surrender-btn').style.display = 'block'; } 
+            else { alert(data.msg); }
+        });
+
+        function leaveLobby() { socket.emit('leave_lobby'); isInLobby = false; document.getElementById('waiting-room').style.display = 'none'; document.getElementById('login-screen').style.display = 'block'; }
+        function spectateGame() { isSpectator = true; isInLobby = false; document.getElementById('login-screen').style.display = 'none'; document.getElementById('game-board-container').style.display = 'flex'; document.getElementById('player-controls-panel').style.display = 'none'; document.getElementById('surrender-btn').style.display = 'none'; socket.emit('request_full_state'); }
+        function surrenderGame() { if (confirm("Bạn có chắc chắn muốn bỏ cuộc và nhận thua? Toàn bộ tài sản sẽ chuyển giao và bạn sẽ phá sản.")) socket.emit('surrender_game'); }
+        function confirmStopGame() { if (confirm("Bạn có chắc chắn muốn kết thúc ván đấu ngay lập tức không? Bảng xếp hạng sẽ được tổng kết dựa trên tài sản hiện tại.")) stopGame(); }
+
+        socket.on('player_list_updated', (data) => {
+            hostSid = data.host_sid; const listDiv = document.getElementById('players-list'); listDiv.innerHTML = "<h3 style='margin: 0 0 10px 0;'>Danh sách người chơi:</h3>";
+            let allOthersReady = true; let totalPlayers = data.players.length;
+
+            data.players.forEach(p => {
+                let isHost = (p.id === hostSid); if (!isHost && !p.is_ready) allOthersReady = false;
+                let readyText = p.is_ready ? "<span style='color: #2ed573; font-size: 13px;'>[Sẵn sàng]</span>" : "<span style='color: #e74c3c; font-size: 13px;'>[Chờ...]</span>";
+                if (isHost) readyText = "<span style='color: #f1c40f; font-size: 13px;'>[Host]</span>";
+                listDiv.innerHTML += `<div style="display: flex; justify-content: space-between; align-items: center; background: #2a2a2a; padding: 10px; border-radius: 5px; border-left: 4px solid ${p.color}"><span style="font-weight: bold; color: ${p.color}">${p.name}</span>${readyText}</div>`;
+            });
+
+            if (socket.id === hostSid) {
+                document.getElementById('start-btn').style.display = 'block'; document.getElementById('host-settings').style.display = 'block'; document.getElementById('ready-btn').style.display = 'none';
+                if (totalPlayers >= 2 && allOthersReady) { document.getElementById('start-btn').disabled = false; document.getElementById('start-btn').style.background = '#2ed573'; document.getElementById('start-btn').innerText = 'Bắt Đầu Ván Đấu'; } 
+                else { document.getElementById('start-btn').disabled = true; document.getElementById('start-btn').style.background = '#555'; document.getElementById('start-btn').innerText = (totalPlayers < 2) ? 'Cần tối thiểu 2 người chơi' : 'Chờ mọi người sẵn sàng...'; }
+            } else {
+                document.getElementById('start-btn').style.display = 'none'; document.getElementById('host-settings').style.display = 'none'; document.getElementById('ready-btn').style.display = 'block';
+                let myData = data.players.find(p => p.id === socket.id);
+                if (myData && myData.is_ready) { document.getElementById('ready-btn').innerText = 'Hủy Sẵn Sàng'; document.getElementById('ready-btn').style.background = '#e67e22'; } 
+                else { document.getElementById('ready-btn').innerText = 'Sẵn Sàng'; document.getElementById('ready-btn').style.background = '#2ed573'; }
+            }
+        });
+
+        function updateSettings() { socket.emit('update_settings', { game_duration: document.getElementById('setting-duration').value, special_dice: document.getElementById('setting-dice').checked, unlimited_time: document.getElementById('setting-unlimited').checked }); }
+        socket.on('settings_updated', (settings) => { document.getElementById('setting-duration').value = settings.game_duration; document.getElementById('setting-dice').checked = settings.special_dice; document.getElementById('setting-unlimited').checked = settings.unlimited_time; document.getElementById('setting-duration').disabled = settings.unlimited_time; });
+        function startGame() { socket.emit('start_game'); } function stopGame() { socket.emit('stop_game'); }
+
+        socket.on('show_victory', (data) => { document.getElementById('victory-winner').innerText = data.winner_name; document.getElementById('victory-assets').innerHTML = data.total_assets.toLocaleString('en-US') + '<s>M</s>'; document.getElementById('victory-popup').style.display = 'block'; shootFireworks(); });
+        
+        socket.on('game_stopped', (data) => {
+            clearInterval(timerInterval); clearInterval(hostDecisionTimer);
+            ['game-timer-container', 'victory-popup', 'inherit-popup', 'action-popup', 'auction-popup', 'auction-vote-popup', 'blind-auction-popup', 'bus-popup', 'build-menu-popup', 'liquidation-popup', 'trade-select-modal', 'live-trade-modal', 'player-select-popup', 'timeout-decision-popup'].forEach(id => document.getElementById(id).style.display = 'none');
+            if (isInLobby || isSpectator) {
+                document.getElementById('game-board-container').style.display = 'none'; const lbList = document.getElementById('leaderboard-list'); lbList.innerHTML = "";
+                data.leaderboard.forEach((p, index) => {
+                    let medal = index === 0 ? "🥇" : (index === 1 ? "🥈" : (index === 2 ? "🥉" : ""));
+                    lbList.innerHTML += `<div style="background: #222; padding: 10px; margin-bottom: 5px; border-radius: 5px; display: flex; justify-content: space-between; align-items: center; border-left: 5px solid ${getColorHex(p.color)}"><span style="font-size: 16px; font-weight: bold;">${medal} #${index + 1} - ${p.name}</span><span style="color: #f1c40f; font-weight: bold; font-size: 16px;">${p.total.toLocaleString('en-US')}<s>M</s></span></div>`;
+                });
+                document.getElementById('leaderboard-popup').style.display = 'block';
+            }
+            hostSid = data.host_sid; addGameLog(data.msg);
+        });
+
+        function closeLeaderboard() {
+            document.getElementById('leaderboard-popup').style.display = 'none';
+            if (isInLobby) { document.getElementById('waiting-room').style.display = 'block'; isSpectator = false; } else { document.getElementById('login-screen').style.display = 'block'; isSpectator = false; }
+            document.getElementById('game-log').innerHTML = ''; document.querySelectorAll('.player-token').forEach(t => t.remove());
+        }
+
+        socket.on('game_started', () => { 
+            if (!isInLobby && !isSpectator) return;
+            document.getElementById('waiting-room').style.display = 'none'; document.getElementById('game-board-container').style.display = 'flex'; document.getElementById('game-log').innerHTML = ''; document.querySelectorAll('.player-token').forEach(t => t.remove());
+            ['leaderboard-popup', 'victory-popup', 'action-popup', 'auction-popup', 'auction-vote-popup', 'blind-auction-popup', 'bus-popup', 'build-menu-popup', 'liquidation-popup', 'inherit-popup', 'trade-select-modal', 'live-trade-modal', 'player-select-popup', 'timeout-decision-popup'].forEach(id => document.getElementById(id).style.display = 'none');
+            document.getElementById('surrender-btn').style.display = 'block'; document.getElementById('stop-game-btn').style.display = (socket.id === hostSid && !isSpectator) ? 'block' : 'none';
+            document.getElementById('game-timer-container').style.display = 'block'; timeoutTriggered = false; isSpectator = false;
+        });
+
+        socket.on('show_timeout_decision', () => {
+            if(socket.id === hostSid && !isSpectator) {
+                document.getElementById('timeout-decision-popup').style.display = 'block'; let countdown = 30; document.getElementById('timeout-decision-countdown').innerText = countdown;
+                clearInterval(hostDecisionTimer);
+                hostDecisionTimer = setInterval(() => { countdown--; document.getElementById('timeout-decision-countdown').innerText = countdown; if(countdown <= 0) { clearInterval(hostDecisionTimer); document.getElementById('timeout-decision-popup').style.display = 'none'; stopGame(); } }, 1000);
+            }
+        });
+
+        function addExtraTime() { clearInterval(hostDecisionTimer); const minutes = parseInt(document.getElementById('extra-time-input').value) || 10; document.getElementById('timeout-decision-popup').style.display = 'none'; socket.emit('add_extra_time', { minutes: minutes }); }
+
+        const BOARD_SPACES_MAP = {}; const O_X = 0.5; const O_Y = 0.5; const CW_X = 13.5; const CW_Y = 13.5; const SW_X = (100 - O_X * 2 - CW_X * 2) / 9; const SW_Y = (100 - O_Y * 2 - CW_Y * 2) / 9; 
+        for (let i = 0; i < 40; i++) {
+            let left, top, width, height;
+            if (i === 0) { left = 100 - O_X - CW_X; top = 100 - O_Y - CW_Y; width = CW_X; height = CW_Y; }
+            else if (i < 10) { left = 100 - O_X - CW_X - i * SW_X; top = 100 - O_Y - CW_Y; width = SW_X; height = CW_Y; }
+            else if (i === 10) { left = O_X; top = 100 - O_Y - CW_Y; width = CW_X; height = CW_Y; }
+            else if (i < 20) { left = O_X; top = 100 - O_Y - CW_Y - (i - 10) * SW_Y; width = CW_X; height = SW_Y; }
+            else if (i === 20) { left = O_X; top = O_Y; width = CW_X; height = CW_Y; }
+            else if (i < 30) { left = O_X + CW_X + (i - 21) * SW_X; top = O_Y; width = SW_X; height = CW_Y; }
+            else if (i === 30) { left = 100 - O_X - CW_X; top = O_Y; width = CW_X; height = CW_Y; }
+            else if (i < 40) { left = 100 - O_X - CW_X; top = O_Y + CW_Y + (i - 31) * SW_Y; width = CW_X; height = SW_Y; }
+            BOARD_SPACES_MAP[i] = { left: `${left}%`, top: `${top}%`, width: `${width}%`, height: `${height}%` };
+        }
+
+        function drawBoardZones(gameStateData) {
+            const container = document.getElementById('territory-overlays'); container.innerHTML = ""; 
+            let myPlayerPos = null; if(gameStateData && !isSpectator) { let me = gameStateData.players_stats.find(p => p.sid === socket.id); if(me) myPlayerPos = me.position; }
+
+            for (let i = 0; i < 40; i++) {
+                const coords = BOARD_SPACES_MAP[i]; if (!coords) continue;
+                const spaceName = SPACE_NAMES[i]; let owner = null; let propData = null; let ownerColor = null;
+
+                gameStateData.players_stats.forEach(player => {
+                    if (player.is_bankrupt) return;
+                    let found = player.properties.find(p => p.id === i);
+                    if (found) { owner = player.name; ownerColor = player.color; propData = found; }
+                });
+
+                let overlay = document.createElement('div');
+                overlay.style.position = "absolute"; overlay.style.left = coords.left; overlay.style.top = coords.top; overlay.style.width = coords.width; overlay.style.height = coords.height; overlay.style.pointerEvents = "auto"; overlay.style.boxSizing = "border-box"; overlay.style.zIndex = "4"; 
+                
+                if (propData) {
+                    let borderStyle = propData.is_mortgaged ? "2px dashed" : "4px solid"; let opacity = propData.is_mortgaged ? "0.3" : "0.7";
+                    overlay.style.border = `${borderStyle} ${ownerColor}`; overlay.style.boxShadow = `inset 0 0 20px ${ownerColor}, 0 0 5px ${ownerColor}`; overlay.style.backgroundColor = propData.is_mortgaged ? "rgba(0,0,0,0.5)" : "transparent"; overlay.style.opacity = opacity; overlay.style.borderRadius = "2px";
+                    if(propData.hotel > 0) overlay.innerHTML = `<div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 22px; text-shadow: 0 2px 4px #000, 0 0 10px #fff; z-index: 10;">🏨</div>`;
+                    else if(propData.houses > 0) overlay.innerHTML = `<div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 14px; letter-spacing: -2px; text-shadow: 0 2px 4px #000, 0 0 10px #fff; width: 100%; text-align: center; z-index: 10;">${"🏠".repeat(propData.houses)}</div>`;
+                } else { overlay.style.border = "none"; overlay.style.backgroundColor = "transparent"; }
+
+                overlay.addEventListener('mouseenter', (e) => { showBoardTooltip(i, spaceName, owner, propData, myPlayerPos, e); }); overlay.addEventListener('mousemove', (e) => { moveBoardTooltip(e); }); overlay.addEventListener('mouseleave', () => { hideBoardTooltip(); }); container.appendChild(overlay);
+            }
+        }
+
+        function showBoardTooltip(spaceId, spaceName, owner, propData, myPos, e) {
+            let tooltip = document.getElementById('board-tooltip');
+            if(!tooltip) { tooltip = document.createElement('div'); tooltip.id = 'board-tooltip'; tooltip.style.position = 'fixed'; tooltip.style.zIndex = '9999'; tooltip.style.pointerEvents = 'none'; document.body.appendChild(tooltip); }
+            
+            let stepsHtml = "";
+            if (myPos !== null && !isSpectator) {
+                let steps = (spaceId - myPos + 40) % 40;
+                if (steps === 0) stepsHtml = `<div style="background:#3498db; color:#fff; padding:5px; border-radius:4px; font-weight:bold; text-align:center; margin-top:5px; font-size:12px; box-shadow: 0 4px 6px rgba(0,0,0,0.5);">📍 Vị trí hiện tại</div>`;
+                else stepsHtml = `<div style="background:#e67e22; color:#fff; padding:5px; border-radius:4px; font-weight:bold; text-align:center; margin-top:5px; font-size:12px; box-shadow: 0 4px 6px rgba(0,0,0,0.5);">👣 Cách bạn: ${steps} bước</div>`;
+            }
+
+            let cardHtml = "";
+            if (CARD_DB[spaceName]) { let mockProp = { name: spaceName, type: CARD_DB[spaceName].isRail ? 'Railroad' : (CARD_DB[spaceName].isUtil ? 'Utility' : 'Property'), color: CARD_DB[spaceName].color, is_mortgaged: propData ? propData.is_mortgaged : false, houses: propData ? propData.houses : 0, hotel: propData ? propData.hotel : 0 }; cardHtml = generateCardHTML(mockProp, true); } 
+            else { cardHtml = `<div style="background:#fff; border:2px solid #000; border-radius:6px; padding:10px; width:130px; text-align:center; color:#000; box-shadow: 0 4px 8px rgba(0,0,0,0.5); font-family: Arial, sans-serif;"><h3 style="margin:0; font-size:13px; text-transform: uppercase;">${spaceName}</h3></div>`; }
+            
+            let ownerHtml = "";
+            if (owner) ownerHtml = `<div style="background:#2ecc71; color:#fff; padding:5px; border-radius:4px; font-weight:bold; text-align:center; margin-top:5px; font-size:12px; box-shadow: 0 4px 6px rgba(0,0,0,0.5);">👑 Của: ${owner}</div>`;
+            else if (CARD_DB[spaceName]) ownerHtml = `<div style="background:#7f8c8d; color:#fff; padding:5px; border-radius:4px; font-weight:bold; text-align:center; margin-top:5px; font-size:12px; box-shadow: 0 4px 6px rgba(0,0,0,0.5);">🛒 Đất trống</div>`;
+
+            tooltip.innerHTML = `<div style="display:flex; flex-direction:column; gap:5px; transform: scale(1.15); transform-origin: top left;">${cardHtml}${ownerHtml}${stepsHtml}</div>`;
+            moveBoardTooltip(e); tooltip.style.display = 'block';
+        }
+
+        function moveBoardTooltip(e) {
+            let tooltip = document.getElementById('board-tooltip');
+            if(tooltip) { let x = e.clientX + 20; let y = e.clientY + 20; if (x + 160 > window.innerWidth) x = e.clientX - 160; if (y + 300 > window.innerHeight) y = e.clientY - 300; tooltip.style.left = x + 'px'; tooltip.style.top = y + 'px'; }
+        }
+        function hideBoardTooltip() { let tooltip = document.getElementById('board-tooltip'); if(tooltip) tooltip.style.display = 'none'; }
+
+        // BỎ QUA ANIMATION KHI TAB ẨN
+        let visualPosMap = {}; let isMovingMap = {};
+
+        function updateAllTokens(players_stats) {
+            let targetPosMap = {};
+            players_stats.forEach(p => {
+                if (!p.is_bankrupt) { targetPosMap[p.sid] = p.position; if (visualPosMap[p.sid] === undefined) visualPosMap[p.sid] = p.position; } 
+                else { let token = document.getElementById(`token-${p.sid}`); if (token) token.style.display = 'none'; }
+            });
+
+            players_stats.forEach(p => {
+                if (p.is_bankrupt) return;
+                let targetPos = p.position; let currPos = visualPosMap[p.sid];
+
+                if (document.hidden) {
+                    visualPosMap[p.sid] = targetPos; isMovingMap[p.sid] = false; renderTokenAt(p.sid, p.color, targetPos);
+                    checkPendingPopup(p.sid); return;
+                }
+
+                if (currPos !== targetPos && !isMovingMap[p.sid]) {
+                    let path = [];
+                    if (targetPos === 10 && p.in_jail && currPos !== 10) { path.push(10); } 
+                    else if (targetPos < currPos && (currPos - targetPos) <= 3) { for (let i = currPos - 1; i >= targetPos; i--) path.push(i); } 
+                    else { let steps = (targetPos - currPos + 40) % 40; for (let i = 1; i <= steps; i++) path.push((currPos + i) % 40); }
+                    animateTokenPath(p.sid, p.color, path, players_stats);
+                } else if (!isMovingMap[p.sid]) { renderAllTokensOverlaps(players_stats); checkPendingPopup(p.sid); }
+            });
+        }
+
+        function animateTokenPath(sid, color, path, current_stats) {
+            if (path.length === 0) return;
+            isMovingMap[sid] = true; let step = 0;
+            let interval = setInterval(() => {
+                if (document.hidden) { clearInterval(interval); visualPosMap[sid] = path[path.length - 1]; isMovingMap[sid] = false; renderAllTokensOverlaps(current_stats); checkPendingPopup(sid); return; }
+                visualPosMap[sid] = path[step]; renderTokenAt(sid, color, path[step]); step++;
+                if (step >= path.length) { clearInterval(interval); isMovingMap[sid] = false; renderAllTokensOverlaps(current_stats); checkPendingPopup(sid); }
+            }, 100); 
+        }
+
+        function checkPendingPopup(sid) {
+            if (sid === socket.id) {
+                if (pendingActionPopup) { displayActionPopup(pendingActionPopup); pendingActionPopup = null; }
+                if (pendingBusMenu) { displayBusMenu(pendingBusMenu); pendingBusMenu = null; }
+            }
+        }
+
+        function renderTokenAt(sid, color, spaceId) { setTokenDOMPosition(sid, color, spaceId, 1, 0); }
+
+        function renderAllTokensOverlaps(players_stats) {
+            let posMap = {};
+            players_stats.forEach(p => { if (!p.is_bankrupt && !isMovingMap[p.sid]) { let pos = visualPosMap[p.sid]; if (!posMap[pos]) posMap[pos] = []; posMap[pos].push(p.sid); } });
+            players_stats.forEach(p => { if (!p.is_bankrupt && !isMovingMap[p.sid]) { let pos = visualPosMap[p.sid]; let count = posMap[pos].length; let index = posMap[pos].indexOf(p.sid); setTokenDOMPosition(p.sid, p.color, pos, count, index); } });
+        }
+
+        function setTokenDOMPosition(sid, color, spaceId, count, index) {
+            let token = document.getElementById(`token-${sid}`);
+            if (!token) { token = document.createElement('div'); token.id = `token-${sid}`; token.className = 'player-token'; token.style.background = color; document.getElementById('board-container').appendChild(token); }
+            token.style.display = 'block';
+
+            const cell = BOARD_SPACES_MAP[spaceId]; if (!cell) return;
+            let bx = parseFloat(cell.left) + parseFloat(cell.width) / 2; let by = parseFloat(cell.top) + parseFloat(cell.height) / 2;
+            let ox = 0, oy = 0;
+            if (count > 1) { const angle = (index / count) * Math.PI * 2; const radius = 2.5; ox = Math.cos(angle) * radius; oy = Math.sin(angle) * radius; }
+            token.style.left = (bx + ox) + '%'; token.style.top = (by + oy) + '%';
+        }
+
+        socket.on('update_game_state', (data) => {
+            if(!isInLobby && !isSpectator) return;
+            
+            document.getElementById('ui-houses').innerText = data.global_houses; document.getElementById('ui-hotels').innerText = data.global_hotels;
+            document.getElementById('res-houses').innerText = data.global_houses; document.getElementById('res-hotels').innerText = data.global_hotels;
+            
+            clearInterval(timerInterval); let serverRemain = Math.floor(data.remaining_time); let syncTimestamp = Date.now();
+            if (data.unlimited_time) { document.getElementById('game-timer').innerText = "TỰ DO"; } 
+            else {
+                if (serverRemain > 0) timeoutTriggered = false;
+                if(!data.is_paused && serverRemain > 0) {
+                    let mInit = Math.floor(serverRemain / 60); let sInit = serverRemain % 60; document.getElementById('game-timer').innerText = `${mInit}:${sInit.toString().padStart(2, '0')}`;
+                    timerInterval = setInterval(() => {
+                        let passed = Math.floor((Date.now() - syncTimestamp) / 1000); let remain = serverRemain - passed;
+                        if(remain <= 0) { 
+                            clearInterval(timerInterval); document.getElementById('game-timer').innerText = "HẾT GIỜ"; 
+                            if (!timeoutTriggered && socket.id === hostSid && !isSpectator) { socket.emit('time_out_reached'); timeoutTriggered = true; } 
+                        } else { let m = Math.floor(remain / 60); let s = remain % 60; document.getElementById('game-timer').innerText = `${m}:${s.toString().padStart(2, '0')}`; }
+                    }, 1000);
+                } else {
+                    let m = Math.max(0, Math.floor(serverRemain / 60)); let s = Math.max(0, serverRemain % 60);
+                    document.getElementById('game-timer').innerText = `${m}:${s.toString().padStart(2, '0')}`; if(serverRemain <= 0) document.getElementById('game-timer').innerText = "HẾT GIỜ";
+                }
+            }
+
+            if(data.is_paused && !data.is_initial_rolling) { document.getElementById('pause-overlay').style.display = 'flex'; document.getElementById('pause-reason-text').innerText = data.pause_reason; } 
+            else { document.getElementById('pause-overlay').style.display = 'none'; }
+
+            if (data.is_initial_rolling) { document.getElementById('player-controls-panel').style.display = 'none'; } else { if (!isSpectator) document.getElementById('player-controls-panel').style.display = 'block'; }
+
+            let turnHtml = ""; 
+            if (data.is_initial_rolling) {
+                turnHtml = "<span style='color:#e67e22'>Đang tung xúc xắc phân định lượt...</span>";
+                let rollWaitNames = data.players_to_roll.map(sid => { let p = data.players_stats.find(ps => ps.sid === sid); return p ? p.name : ''; });
+                document.getElementById('turn-order-list').innerHTML = turnHtml; document.getElementById('current-player-turn').innerText = `Chờ: ${rollWaitNames.join(', ')}`;
+                if (data.players_to_roll.includes(socket.id) && !isSpectator) { document.getElementById('roll-dice-btn').style.display = 'block'; document.getElementById('roll-dice-btn').innerText = "TUNG XÚC XẮC PHÂN LƯỢT 🎲"; } 
+                else { document.getElementById('roll-dice-btn').style.display = 'none'; }
+            } else {
+                data.turn_order.forEach((name, i) => { turnHtml += `[${i+1}] ${name} ➔ `; }); document.getElementById('turn-order-list').innerHTML = turnHtml.slice(0, -3) || "Chưa có";
+                if (socket.id === data.current_turn_sid && !isSpectator) {
+                    document.getElementById('current-player-turn').innerText = "🔥 ĐẾN LƯỢT CỦA BẠN!";
+                    if(!data.is_paused && document.getElementById('action-popup').style.display !== 'block' && document.getElementById('auction-popup').style.display !== 'block' && document.getElementById('bus-popup').style.display !== 'block' && document.getElementById('player-select-popup').style.display !== 'block' && document.getElementById('liquidation-popup').style.display !== 'block') {
+                        document.getElementById('roll-dice-btn').style.display = 'block'; document.getElementById('roll-dice-btn').innerText = "ĐỔ XÚC XẮC 🎲";
+                    } else { document.getElementById('roll-dice-btn').style.display = 'none'; }
+                } else {
+                    document.getElementById('current-player-turn').innerText = `⏳ Đang chờ ${data.current_turn_name}...`; document.getElementById('roll-dice-btn').style.display = 'none';
+                }
+            }
+
+            drawBoardZones(data); updateAllTokens(data.players_stats);
+
+            let myStat = data.players_stats.find(p => p.sid === socket.id); let jailControls = document.getElementById('jail-controls');
+            if (myStat && myStat.sid === data.current_turn_sid && myStat.in_jail && !data.is_paused && !isSpectator && !data.is_initial_rolling) {
+                jailControls.style.display = 'block'; document.getElementById('use-jail-card-btn').disabled = (myStat.out_of_jail_free <= 0);
+            } else { jailControls.style.display = 'none'; }
+
+            socket.on('unlock_roll_after_jail_exit', () => { document.getElementById('jail-controls').style.display = 'none'; });
+
+            const statsDiv = document.getElementById('players-stats'); statsDiv.innerHTML = ""; let amIBankrupt = false;
+            data.players_stats.forEach(p => {
+                if (p.sid === socket.id && p.is_bankrupt) amIBankrupt = true;
+                let groups = {};
+                if (p.properties.length > 0) { p.properties.forEach(pr => { let groupKey = pr.type === 'Property' ? pr.color : pr.type; if (!groups[groupKey]) groups[groupKey] = []; groups[groupKey].push(generateCardHTML(pr)); }); }
+                let inventoryHtml = "";
+                if (p.is_bankrupt) { inventoryHtml = '<span style="color:#e74c3c;">Đã mất trắng tài sản</span>'; } 
+                else if (Object.keys(groups).length > 0) {
+                    inventoryHtml += `<div class="inventory-container">`;
+                    for (let key in groups) { inventoryHtml += `<div class="property-group">${groups[key].join('')}</div>`; }
+                    inventoryHtml += `</div>`;
+                } else { inventoryHtml = '<span style="color:#aaa; font-style: italic;">Chưa sở hữu đất.</span>'; }
+
+                let jailCardStr = (p.out_of_jail_free > 0 && !p.is_bankrupt) ? `<div style="color:#2ed573; margin-top:2px; font-weight:bold;">🎟️ Thẻ Ra Tù: ${p.out_of_jail_free}</div>` : '';
+                let bankruptTag = p.is_bankrupt ? ` <span style="color:#e74c3c; font-size:11px;">[PHÁ SẢN]</span>` : ''; let opacity = p.is_bankrupt ? '0.5' : '1';
+                
+                statsDiv.innerHTML += `
+                    <div style="background:#2a2a2a; padding:10px; margin-bottom:10px; border-radius:6px; opacity: ${opacity};">
+                        <div style="display:flex; justify-content:space-between; margin-bottom: 6px; border-bottom: 1px solid #444; padding-bottom: 5px;">
+                            <span style="color:${p.color}; font-weight:bold; font-size:15px;">${p.name}${bankruptTag}</span>
+                            <span style="font-weight:bold; font-size:15px; color:#f1c40f;">💰 ${p.balance.toLocaleString('en-US')}<s>M</s></span>
+                        </div>
+                        <div style="font-size:13px; color:#ccc; line-height: 1.6;">${jailCardStr}<div style="margin-top: 8px;">${inventoryHtml}</div></div>
+                    </div>`;
+            });
+            if (amIBankrupt) { document.getElementById('roll-dice-btn').style.display = 'none'; document.getElementById('surrender-btn').style.display = 'none'; }
+        });
+
+        socket.on('server_message', (data) => { addGameLog(data.msg); });
+        function addGameLog(msg) {
+            const logDiv = document.getElementById('game-log');
+            let color = "#ddd"; let lowerMsg = msg.toLowerCase();
+            if (lowerMsg.includes("phá sản") || lowerMsg.includes("vào tù!") || lowerMsg.includes("bị cảnh sát bắt") || lowerMsg.includes("thất bại")) color = "#ff4757"; 
+            else if (lowerMsg.includes("trả") || lowerMsg.includes("trừ") || lowerMsg.includes("phạt") || lowerMsg.includes("nộp thuế") || lowerMsg.includes("chi ") || lowerMsg.includes("hủy")) color = "#ff7675"; 
+            else if (lowerMsg.includes("nhận") || lowerMsg.includes("thu ") || lowerMsg.includes("thắng") || lowerMsg.includes("cộng") || lowerMsg.includes("đã chốt")) color = "#2ed573"; 
+            else if (lowerMsg.includes("bốc thẻ") || lowerMsg.includes("cơ hội") || lowerMsg.includes("khí lệnh")) color = "#ffa502"; 
+            else if (lowerMsg.includes("đấu giá")) color = "#74b9ff"; 
+            
+            logDiv.innerHTML += `<div style="margin: 5px 0; border-bottom: 1px solid #333; padding-bottom: 4px; font-size: 13px; line-height: 1.4; color: ${color};">${msg}</div>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+
+            if (!document.hidden && lowerMsg.includes("nhận 2,000,000")) shootMoneyConfetti();
+            if (!document.hidden && (lowerMsg.includes("thắng đấu giá") || lowerMsg.includes("chi ") || lowerMsg.includes("xây 1 nhà") || lowerMsg.includes("lên khách sạn"))) {
+                if(lowerMsg.includes("mua") || lowerMsg.includes("xây") || lowerMsg.includes("lên")) shootSmallConfetti();
+            }
+        }
+
+        function rollDice() { 
+            const popups = ['action-popup', 'bus-popup', 'auction-popup', 'auction-vote-popup', 'blind-auction-popup', 'player-select-popup', 'liquidation-popup', 'inherit-popup', 'build-menu-popup', 'live-trade-modal'];
+            if (popups.some(id => document.getElementById(id).style.display !== 'none')) return;
+            document.getElementById('roll-dice-btn').style.display = 'none'; socket.emit('roll_dice'); 
+        }
+
+        socket.on('show_bus_menu', (data) => {
+            if(isSpectator) return; 
+            if (isMovingMap[socket.id]) { pendingBusMenu = data; } 
+            else { displayBusMenu(data); }
+        });
+        
+        function displayBusMenu(data) {
+            currentBusData = data;
+            document.getElementById('bus-btn-1').innerText = `Đi ${data.die1} bước ➔ ${data.p1}`; document.getElementById('bus-btn-2').innerText = `Đi ${data.die2} bước ➔ ${data.p2}`; document.getElementById('bus-btn-3').innerText = `Đi ${data.die1 + data.die2} bước ➔ ${data.p3}`;
+            document.getElementById('bus-popup').style.display = 'block'; document.getElementById('roll-dice-btn').style.display = 'none'; 
+        }
+
+        function submitBus(choice) { document.getElementById('bus-popup').style.display = 'none'; socket.emit('bus_choice', { choice: choice, die1: currentBusData.die1, die2: currentBusData.die2, is_double: currentBusData.is_double }); }
+
+        socket.on('show_action_popup', (data) => {
+            if(isSpectator) return;
+            if (isMovingMap[socket.id]) { pendingActionPopup = data; } 
+            else { displayActionPopup(data); }
+        });
+
+        function displayActionPopup(data) {
+            isCurrentTurnDouble = data.is_double; const popup = data.popup;
+            let msgContent = "";
+            if (data.total > 0 && !data.special) msgContent += `<div style="margin-bottom: 10px; color: #aaa;">(Đổ: ${data.die1} & ${data.die2} | Tổng: ${data.total})</div>`;
+            if (data.special) msgContent += `<div style="margin-bottom: 10px; color: #aaa;">(Đổ: ${data.die1} & ${data.die2} | Đặc biệt: ${data.special})</div>`;
+            if (data.jail_msg) msgContent += `<div style="color: #ff4757; margin-bottom: 10px;">${data.jail_msg}</div>`;
+
+            let originalMsg = popup.message;
+            if (popup.type === 'CardMove' || originalMsg.includes('[CƠ HỘI]') || originalMsg.includes('[KHÍ LỆNH]')) {
+                document.getElementById('popup-title').style.display = 'none'; 
+                let isChance = originalMsg.includes('[CƠ HỘI]');
+                let cardTitle = isChance ? 'CHANCE' : 'COMMUNITY CHEST';
+                let cardIcon = isChance ? '❓' : '🧰';
+                
+                let cardText = ""; let remainingText = "";
+                let splitMsg = originalMsg.split(/\[(?:CƠ HỘI|KHÍ LỆNH)\]:\s*/);
+                if (splitMsg.length > 1) {
+                    let afterTag = splitMsg[1];
+                    let match = afterTag.match(/(.*?)(<br>Dừng chân tại|<br>🚶‍♂️|<br>💰|<br>⚖️|<br>🚓|<br>💵|<br>🔧|<br>🎉|🎟️)/s);
+                    if (match) { cardText = match[1].trim(); remainingText = afterTag.substring(match[1].length).trim(); } 
+                    else { cardText = afterTag.trim(); }
+                }
+
+                msgContent += `
+                    <div style="display:flex; justify-content:center; margin: 15px 0; width: 100%;">
+                        <div style="width: 240px; min-height: 140px; background: #fff; border-radius: 8px; padding: 5px; box-shadow: 0 10px 25px rgba(0,0,0,0.8); color: #222; border: 2px solid #333; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative;">
+                            <div style="position:absolute; top:0; left:0; width:100%; height:15px; background: ${isChance ? '#e67e22' : '#3498db'}; border-top-left-radius: 5px; border-top-right-radius: 5px;"></div>
+                            <h2 style="margin: 20px 0 10px 0; font-size: 16px; text-transform: uppercase; font-family: 'Arial Black', serif; letter-spacing: 1px;">${cardTitle}</h2>
+                            <div style="font-size: 30px; margin-bottom: 5px;">${cardIcon}</div>
+                            <div style="font-size: 12px; font-weight: bold; text-align: center; line-height: 1.4; font-family: 'Arial', sans-serif; padding: 0 10px;">
+                                ${cardText}
+                            </div>
+                        </div>
+                    </div>
+                `;
+                if(remainingText !== "" && remainingText !== "<br>") { msgContent += `<div style="font-size: 13px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed #555;">${remainingText}</div>`; }
+            } else {
+                document.getElementById('popup-title').style.display = 'block'; document.getElementById('popup-title').innerHTML = popup.title; msgContent += originalMsg;
+            }
+            
+            document.getElementById('popup-message').innerHTML = msgContent; currentSpaceId = popup.space_id;
+            const buyBtn = document.getElementById('popup-buy-btn'); const auctionBtn = document.getElementById('popup-auction-btn'); const closeBtn = document.getElementById('popup-close-btn');
+            
+            if (popup.type === "EmptyProperty") { buyBtn.style.display = 'block'; auctionBtn.style.display = 'block'; closeBtn.style.display = 'none'; } 
+            else if (popup.type === "NotEnoughMoney") { buyBtn.style.display = 'none'; auctionBtn.style.display = 'block'; closeBtn.style.display = 'none'; } 
+            else if (popup.type === "CardMove") { 
+                buyBtn.style.display = 'none'; auctionBtn.style.display = 'none'; closeBtn.style.display = 'block';
+                closeBtn.onclick = function() {
+                    document.getElementById('action-popup').style.display = 'none';
+                    socket.emit('execute_card_move', { card_data: popup.card_data, is_double: data.is_double });
+                };
+            }
+            else { 
+                buyBtn.style.display = 'none'; auctionBtn.style.display = 'none'; closeBtn.style.display = 'block';
+                closeBtn.onclick = confirmTurnEnd;
+            }
+
+            document.getElementById('action-popup').style.display = 'block'; document.getElementById('roll-dice-btn').style.display = 'none'; 
+        }
+
+        function buyProperty() { document.getElementById('action-popup').style.display = 'none'; socket.emit('buy_property', { space_id: currentSpaceId, is_double: isCurrentTurnDouble }); }
+        function startAuction() { document.getElementById('action-popup').style.display = 'none'; socket.emit('start_auction', { space_id: currentSpaceId, is_double: isCurrentTurnDouble }); }
+        function confirmTurnEnd() { document.getElementById('action-popup').style.display = 'none'; socket.emit('confirm_turn_end', { is_double: isCurrentTurnDouble }); }
+
+        socket.on('open_auction_vote_popup', (data) => {
+            document.getElementById('vote-space-name').innerText = data.space_name; document.getElementById('vote-timer').innerText = data.time; document.getElementById('vote-wait-msg').style.display = 'none';
+            const btns = document.getElementById('auction-vote-popup').querySelectorAll('button'); btns.forEach(b => b.style.display = 'block');
+            document.getElementById('auction-vote-popup').style.display = 'block'; document.getElementById('roll-dice-btn').style.display = 'none';
+        });
+
+        function submitAuctionVote(type) { socket.emit('submit_auction_vote', { vote: type }); const btns = document.getElementById('auction-vote-popup').querySelectorAll('button'); btns.forEach(b => b.style.display = 'none'); document.getElementById('vote-wait-msg').style.display = 'block'; }
+        socket.on('update_auction_timer', (data) => { if (data.phase === 'voting') document.getElementById('vote-timer').innerText = data.time; else if (data.phase === 'normal') document.getElementById('auction-timer').innerText = data.time; else if (data.phase === 'blind') document.getElementById('blind-timer').innerText = data.time; });
+
+        socket.on('start_actual_auction', (data) => {
+            document.getElementById('auction-vote-popup').style.display = 'none';
+            if (data.phase === 'normal') {
+                document.getElementById('auction-space-name').innerText = `Đang đấu giá: ${data.space_name}`; document.getElementById('auction-current-bid').innerHTML = `${data.current_bid.toLocaleString('en-US')}<s>M</s>`; document.getElementById('auction-highest-bidder').innerText = data.highest_bidder; document.getElementById('auction-timer').innerText = data.time;
+                if (!isSpectator && data.active_bidders.includes(socket.id)) { document.getElementById('auction-controls').style.display = 'block'; document.getElementById('auction-observer-msg').style.display = 'none'; } else { document.getElementById('auction-controls').style.display = 'none'; document.getElementById('auction-observer-msg').style.display = 'block'; }
+                document.getElementById('auction-popup').style.display = 'block';
+            } else if (data.phase === 'blind') {
+                document.getElementById('blind-space-name').innerText = `Đang đấu giá mù: ${data.space_name}`; document.getElementById('blind-timer').innerText = data.time; document.getElementById('blind-bid-input').value = ""; document.getElementById('blind-bid-format').innerHTML = "0<s>M</s>"; document.getElementById('blind-wait-msg').style.display = 'none';
+                const btnSubmit = document.getElementById('blind-submit-btn'); btnSubmit.disabled = false; btnSubmit.style.background = "#27ae60"; const btnFold = document.getElementById('blind-fold-btn'); btnFold.disabled = false; btnFold.style.background = "#c0392b";
+                if (!isSpectator && data.active_bidders.includes(socket.id)) { document.getElementById('blind-controls').style.display = 'block'; document.getElementById('blind-observer-msg').style.display = 'none'; } else { document.getElementById('blind-controls').style.display = 'none'; document.getElementById('blind-observer-msg').style.display = 'block'; }
+                document.getElementById('blind-auction-popup').style.display = 'block';
+            }
+            document.getElementById('roll-dice-btn').style.display = 'none'; 
+        });
+
+        socket.on('update_auction_ui', (data) => { document.getElementById('auction-current-bid').innerHTML = `${data.current_bid.toLocaleString('en-US')}<s>M</s>`; document.getElementById('auction-highest-bidder').innerText = data.highest_bidder; document.getElementById('auction-timer').innerText = data.time; });
+        function formatBlindBid() { const input = document.getElementById('blind-bid-input'); let val = parseInt(input.value); if (isNaN(val)) val = 0; document.getElementById('blind-bid-format').innerHTML = `Đang đặt: ${val.toLocaleString('en-US')}<s>M</s>`; }
+        function submitBlindBid() { const input = document.getElementById('blind-bid-input'); let val = parseInt(input.value); if (isNaN(val) || val <= 0) { alert("Vui lòng nhập số tiền hợp lệ!"); return; } socket.emit('submit_blind_bid', { amount: val }); document.getElementById('blind-submit-btn').disabled = true; document.getElementById('blind-submit-btn').style.background = "#555"; document.getElementById('blind-fold-btn').disabled = true; document.getElementById('blind-fold-btn').style.background = "#555"; }
+        function placeCustomNormalBid() { const val = parseInt(document.getElementById('custom-normal-bid').value); if (!isNaN(val)) { socket.emit('place_bid', { exact_bid: val }); document.getElementById('custom-normal-bid').value = ''; } }
+        socket.on('blind_bid_error', () => { document.getElementById('blind-submit-btn').disabled = false; document.getElementById('blind-submit-btn').style.background = "#27ae60"; document.getElementById('blind-fold-btn').disabled = false; document.getElementById('blind-fold-btn').style.background = "#c0392b"; });
+        function foldBlindAuction() { socket.emit('fold_auction'); document.getElementById('blind-controls').style.display = 'none'; document.getElementById('blind-wait-msg').style.display = 'block'; document.getElementById('blind-wait-msg').innerText = "Đã bỏ cuộc. Đang chờ người khác..."; }
+        function placeBid(inc) { socket.emit('place_bid', { increment: inc }); }
+        function foldAuction() { document.getElementById('auction-popup').style.display = 'none'; socket.emit('fold_auction'); }
+        socket.on('close_single_auction_modal', () => { document.getElementById('auction-popup').style.display = 'none'; document.getElementById('blind-controls').style.display = 'none'; if (document.getElementById('blind-auction-popup').style.display === 'block') { document.getElementById('blind-wait-msg').style.display = 'block'; document.getElementById('blind-wait-msg').innerText = "Bạn đã bỏ cuộc. Đang chờ người khác..."; } });
+        socket.on('close_auction_popup', () => { document.getElementById('auction-popup').style.display = 'none'; document.getElementById('auction-vote-popup').style.display = 'none'; document.getElementById('blind-auction-popup').style.display = 'none'; });
+
+        function openBuildMenu() { socket.emit('request_build_menu'); }
+        socket.on('open_build_menu', (data) => {
+            if(isSpectator) return;
+            const list = document.getElementById('build-list'); list.innerHTML = "";
+            if(data.spaces.length === 0) { list.innerHTML = "<p style='color:#aaa'>Không có đất đủ điều kiện thao tác.</p>"; } 
+            else {
+                data.spaces.forEach(s => {
+                    let buildBtn = "";
+                    if (s.can_unmortgage) { buildBtn = `<button onclick="unmortgageProperty(${s.id})" style="background:#9b59b6">Chuộc (${s.unmortgage_cost.toLocaleString('en-US')}<s>M</s>)</button>`; } 
+                    else {
+                        if(s.hotel === 1) buildBtn = `<span style="color:#e74c3c">Đã Tối Đa</span>`;
+                        else if(s.houses === 4) {
+                            if (s.can_build_hotel) buildBtn = `<button onclick="buyBuilding(${s.id}, 'hotel')" style="background:#e74c3c">Lên KS (${(s.house_price * 5).toLocaleString('en-US')}<s>M</s>)</button>`;
+                            else buildBtn = `<button disabled style="background:#555; font-size:11px;">Xây đều đất!</button>`;
+                        } else {
+                            if (s.can_build_house) buildBtn = `<button onclick="buyBuilding(${s.id}, 'house')" style="background:#2ed573">Xây Nhà (${s.house_price.toLocaleString('en-US')}<s>M</s>)</button>`;
+                            else buildBtn = `<button disabled style="background:#555; font-size:11px;">Xây đều đất!</button>`;
+                        }
+                    }
+                    let nameDisplay = s.can_unmortgage ? `<span style="text-decoration: line-through; opacity: 0.6;">${s.name}</span>` : s.name;
+                    list.innerHTML += `<div class="build-item"><div><b style="color:${getColorHex(s.color, s.type)}">${nameDisplay}</b><br><span style="font-size:11px">${s.houses} Nhà, ${s.hotel} KS</span></div><div>${buildBtn}</div></div>`;
+                });
+            }
+            const undoBtn = document.getElementById('build-undo-btn');
+            if (data.can_undo) { undoBtn.disabled = false; undoBtn.style.background = "#e67e22"; } else { undoBtn.disabled = true; undoBtn.style.background = "#555"; }
+            document.getElementById('build-menu-popup').style.display = 'block';
+        });
+        function buyBuilding(spaceId, type) { socket.emit('buy_building', { space_id: spaceId, type: type }); }
+        function unmortgageProperty(spaceId) { socket.emit('unmortgage_property', { space_id: spaceId }); }
+        function undoBuildAction() { socket.emit('undo_build_action'); }
+        function closeBuildMenu() { document.getElementById('build-menu-popup').style.display = 'none'; socket.emit('close_build_menu'); }
+
+        socket.on('open_liquidation_menu', (data) => {
+            if(isSpectator) return;
+            document.getElementById('action-popup').style.display = 'none'; document.getElementById('roll-dice-btn').style.display = 'none';
+            document.getElementById('liq-reason').innerHTML = data.reason; document.getElementById('liq-debt').innerHTML = data.debt_amount.toLocaleString('en-US') + '<s>M</s>'; document.getElementById('liq-balance').innerHTML = data.current_balance.toLocaleString('en-US') + '<s>M</s>';
+            let maxLiq = data.current_balance;
+            data.properties.forEach(s => {
+                if (!s.is_mortgaged) maxLiq += s.mortgage_val;
+                if (s.hotel == 1) maxLiq += (s.house_val * 5);
+                else if (s.houses > 0) maxLiq += (s.house_val * s.houses);
+            });
+            document.getElementById('liq-max').innerHTML = maxLiq.toLocaleString('en-US') + '<s>M</s>';
+            let diff = data.current_balance - data.debt_amount;
+            const statusText = document.getElementById('liq-status-text');
+            if (diff < 0) { statusText.innerHTML = `Còn thiếu: <span style="color:#e74c3c">${Math.abs(diff).toLocaleString('en-US')}<s>M</s></span>`; } 
+            else { statusText.innerHTML = `Đã đủ (Thừa: <span style="color:#2ed573">${diff.toLocaleString('en-US')}<s>M</s></span>)`; }
+
+            const btn = document.getElementById('liq-confirm-btn');
+            if(data.current_balance >= data.debt_amount) { btn.disabled = false; btn.style.background = "#2ed573"; } else { btn.disabled = true; btn.style.background = "#555"; }
+            const undoBtn = document.getElementById('liq-undo-btn');
+            if (data.can_undo) { undoBtn.disabled = false; undoBtn.style.background = "#e67e22"; } else { undoBtn.disabled = true; undoBtn.style.background = "#555"; }
+            
+            const list = document.getElementById('liq-list'); list.innerHTML = "";
+            data.properties.forEach(s => {
+                let actionBtn = "";
+                if(s.hotel == 1) actionBtn = `<button onclick="liquidateAction(${s.id}, 'sell_house')" style="background:#f39c12">Bán KS (+${((s.house_val * 5)).toLocaleString('en-US')}<s>M</s>)</button>`;
+                else if(s.houses > 0) {
+                    if(s.can_sell_house) actionBtn = `<button onclick="liquidateAction(${s.id}, 'sell_house')" style="background:#f39c12">Bán Nhà (+${s.house_val.toLocaleString('en-US')}<s>M</s>)</button>`;
+                    else actionBtn = `<span style="font-size:11px; color:#aaa">Bán đều đất!</span>`;
+                } else if (!s.is_mortgaged) actionBtn = `<button onclick="liquidateAction(${s.id}, 'mortgage')" style="background:#8e44ad">Cầm Cố (+${s.mortgage_val.toLocaleString('en-US')}<s>M</s>)</button>`;
+                else actionBtn = `<span style="color:#e74c3c">Đã cầm cố</span>`;
+                list.innerHTML += `<div class="build-item"><div><b style="color:${getColorHex(s.color, 'Property')}">${s.name}</b></div><div>${actionBtn}</div></div>`;
+            });
+            document.getElementById('liquidation-popup').style.display = 'block';
+        });
+
+        function liquidateAction(spaceId, actionType) { socket.emit('liquidate_action', { space_id: spaceId, action: actionType }); }
+        function undoLiquidation() { socket.emit('undo_liquidation'); }
+        function confirmLiquidation() { document.getElementById('liquidation-popup').style.display = 'none'; socket.emit('confirm_debt_paid'); }
+        socket.on('close_liquidation_menu', () => { document.getElementById('liquidation-popup').style.display = 'none'; });
+
+        socket.on('player_bankrupted', (data) => { 
+            if(isSpectator) return;
+            document.getElementById('popup-title').style.display = 'block'; document.getElementById('popup-title').innerHTML = "<span style='color: #e74c3c;'>💀 PHÁ SẢN!</span>"; document.getElementById('popup-message').innerHTML = data.msg;
+            document.getElementById('popup-buy-btn').style.display = 'none'; document.getElementById('popup-auction-btn').style.display = 'none'; document.getElementById('popup-close-btn').style.display = 'block'; document.getElementById('action-popup').style.display = 'block';
+            document.getElementById('roll-dice-btn').style.display = 'none'; document.getElementById('surrender-btn').style.display = 'none'; document.getElementById('jail-controls').style.display = 'none'; document.getElementById('player-controls-panel').style.display = 'none';
+            isSpectator = true;
+        });
+        
+        socket.on('open_inherit_modal', (data) => {
+            if(isSpectator) return;
+            inheritUnmortgageIds = []; document.getElementById('inherit-fee').innerHTML = data.fee_paid.toLocaleString('en-US') + '<s>M</s>';
+            const list = document.getElementById('inherit-list'); list.innerHTML = "";
+            data.properties.forEach(s => { list.innerHTML += `<div style="margin-bottom: 5px;"><input type="checkbox" id="inherit-${s.id}" value="${s.id}" onchange="toggleInheritUnmortgage(this)"><label for="inherit-${s.id}">Chuộc ${s.name} (Phí: ${s.unmortgage.toLocaleString('en-US')}<s>M</s>)</label></div>`; });
+            document.getElementById('inherit-popup').style.display = 'block'; document.getElementById('roll-dice-btn').style.display = 'none'; 
+        });
+        function toggleInheritUnmortgage(cb) { const val = parseInt(cb.value); if(cb.checked) inheritUnmortgageIds.push(val); else inheritUnmortgageIds = inheritUnmortgageIds.filter(id => id !== val); }
+        function confirmInherit() { document.getElementById('inherit-popup').style.display = 'none'; socket.emit('resolve_inherit', { unmortgage_ids: inheritUnmortgageIds }); }
+
+        function requestTrade() { socket.emit('request_trade_players'); }
+        socket.on('show_trade_player_select', (data) => {
+            if(isSpectator) return;
+            const list = document.getElementById('trade-player-list'); list.innerHTML = "";
+            if (data.players.length === 0) list.innerHTML = "<p>Không có ai để đàm phán.</p>";
+            data.players.forEach(p => { list.innerHTML += `<button onclick="initiateTrade('${p.id}')" style="background:#2980b9; margin: 5px; width:100%;">${p.name}</button>`; });
+            document.getElementById('trade-select-modal').style.display = 'block';
+        });
+
+        function initiateTrade(targetSid) { document.getElementById('trade-select-modal').style.display = 'none'; socket.emit('initiate_trade', { target_sid: targetSid }); }
+
+        socket.on('open_live_trade', (data) => {
+            if(isSpectator) return;
+            myTradeRole = (socket.id === data.p1_sid) ? 'p1' : 'p2';
+            let myName = (myTradeRole === 'p1') ? data.p1_name : data.p2_name;
+            let oppName = (myTradeRole === 'p1') ? data.p2_name : data.p1_name;
+            
+            document.getElementById('trade-name-1').innerText = myName + ' (Bạn)';
+            document.getElementById('trade-name-2').innerText = oppName;
+            
+            let myInv = (myTradeRole === 'p1') ? data.p1_inventory : data.p2_inventory;
+            let oppInv = (myTradeRole === 'p1') ? data.p2_inventory : data.p1_inventory;
+            
+            const processInv = (inv) => inv.map(p => {
+                let type = p.type || 'Property';
+                if (!p.type) {
+                    if(p.name.includes("Rail") || p.name.includes("Air") || p.name.includes("Cruise") || p.name.includes("Space")) type = 'Railroad';
+                    if(p.name.includes("Energy")) type = 'Utility';
+                }
+                return {
+                    id: p.id, name: p.name, type: type,
+                    color: p.color || (CARD_DB[p.name] ? CARD_DB[p.name].color : 'gray'),
+                    houses: p.houses || 0, hotel: p.hotel || 0, is_mortgaged: p.is_mortgaged || false, price: p.price || 0
+                };
+            });
+            
+            localMyInvData = processInv(myInv); localOppInvData = processInv(oppInv);
+            localMyProps = []; localOppProps = [];
+            
+            document.getElementById('trade-money-1').disabled = false; document.getElementById('trade-money-2').disabled = true;
+            document.getElementById('trade-money-1').value = ""; document.getElementById('trade-money-2').value = "";
+            
+            isTradeLocked = false; updateLockUI(false, false); 
+            renderTradeZones();
+            document.getElementById('live-trade-modal').style.display = 'flex';
+        });
+
+        function renderTradeZones() {
+            document.getElementById('trade-my-inv').innerHTML = generateTradeCardsHtml(localMyInvData.filter(p => !localMyProps.includes(p.id)), true);
+            document.getElementById('trade-table-my').innerHTML = generateTradeCardsHtml(localMyInvData.filter(p => localMyProps.includes(p.id)), true) + (localMyProps.length === 0 ? `<span style="color:#2ed573; opacity:0.5; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); font-size: 20px; font-weight: bold; pointer-events: none;">KÉO THẢ THẺ CỦA BẠN VÀO ĐÂY</span>` : '');
+            document.getElementById('trade-opp-inv').innerHTML = generateTradeCardsHtml(localOppInvData.filter(p => !localOppProps.includes(p.id)), false);
+            document.getElementById('trade-table-opp').innerHTML = generateTradeCardsHtml(localOppInvData.filter(p => localOppProps.includes(p.id)), false) + (localOppProps.length === 0 ? `<span style="color:#e74c3c; opacity:0.5; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); font-size: 20px; font-weight: bold; pointer-events: none;">ĐỀ XUẤT CỦA ĐỐI PHƯƠNG</span>` : '');
+        }
+
+        function generateTradeCardsHtml(propList, isMine) {
+            if(propList.length === 0) return "";
+            let html = `<div style="display: flex; flex-wrap: wrap; gap: 10px; padding: 10px; width: 100%;">`;
+            let groups = {}; let mortgaged = [];
+            propList.forEach(p => {
+                if (p.is_mortgaged) mortgaged.push(p);
+                else { let key = p.type === 'Property' ? p.color : p.type; if(!groups[key]) groups[key] = []; groups[key].push(p); }
+            });
+            for(let k in groups) { html += `<div style="display: flex; gap: 5px;">`; groups[k].forEach(p => { html += wrapTradeCard(p, isMine, false); }); html += `</div>`; }
+            if(mortgaged.length > 0) { html += `<div style="display: flex; margin-right: 15px;">`; mortgaged.forEach(p => { html += wrapTradeCard(p, isMine, true); }); html += `</div>`; }
+            html += `</div>`; return html;
+        }
+
+        function wrapTradeCard(p, isMine, isMortgagedGroup = false) {
+            let extraClasses = (isMine && !isTradeLocked) ? "trade-draggable" : "";
+            let extraAttrs = (isMine && !isTradeLocked) ? `draggable="true" ondragstart="dragTrade(event, ${p.id})"` : "";
+            extraAttrs += ` id="trade-card-${p.id}"`;
+            let styleAttr = `zoom: 0.85;`;
+            if (isMortgagedGroup) styleAttr += ` margin-right: -95px;`;
+            extraAttrs += ` style="${styleAttr}"`;
+            return generateCardHTML(p, true, extraClasses, extraAttrs);
+        }
+
+        function dragTrade(ev, id) { ev.dataTransfer.setData("text", id); }
+        function allowDrop(ev) { ev.preventDefault(); }
+        
+        function dropTrade(ev, zone) {
+            ev.preventDefault(); let id = parseInt(ev.dataTransfer.getData("text")); if(isNaN(id)) return;
+            if (zone === 'table' && !localMyProps.includes(id)) { localMyProps.push(id); } 
+            else if (zone === 'inventory' && localMyProps.includes(id)) { localMyProps = localMyProps.filter(p => p !== id); }
+            renderTradeZones(); updateLiveTrade();
+        }
+
+        function formatTradeMoney(input) {
+            let val = input.value.replace(/,/g, '');
+            if (val === '') { updateLiveTrade(); return; }
+            val = parseInt(val); if (isNaN(val)) val = 0;
+            input.value = val.toLocaleString('en-US');
+            updateLiveTrade();
+        }
+
+        function updateLiveTrade() {
+            if (isTradeLocked) { isTradeLocked = false; document.getElementById('trade-lock-btn').innerText = "Khóa Đề Xuất"; document.getElementById('trade-lock-btn').style.background = "#f1c40f"; }
+            const myMoneyStr = document.getElementById(`trade-money-1`).value.replace(/,/g, '');
+            const myMoney = parseInt(myMoneyStr) || 0;
+            socket.emit('live_trade_update', { role: myTradeRole, props: localMyProps, money: myMoney, locked: isTradeLocked });
+        }
+
+        function toggleTradeLock() {
+            isTradeLocked = !isTradeLocked;
+            const btn = document.getElementById('trade-lock-btn');
+            btn.innerText = isTradeLocked ? "Đã Khóa (Chờ đối phương)" : "Khóa Đề Xuất"; btn.style.background = isTradeLocked ? "#27ae60" : "#f1c40f";
+            const myMoneyStr = document.getElementById(`trade-money-1`).value.replace(/,/g, '');
+            const myMoney = parseInt(myMoneyStr) || 0;
+            socket.emit('live_trade_update', { role: myTradeRole, props: localMyProps, money: myMoney, locked: isTradeLocked });
+        }
+
+        socket.on('sync_live_trade', (state) => {
+            const otherRole = myTradeRole === 'p1' ? 'p2' : 'p1';
+            let otherMoney = state[`${otherRole}_money`] || 0;
+            document.getElementById(`trade-money-2`).value = otherMoney > 0 ? otherMoney.toLocaleString('en-US') : "";
+            localOppProps = state[`${otherRole}_props`] || [];
+            
+            if (!state[`${myTradeRole}_locked`] && isTradeLocked) {
+                isTradeLocked = false; document.getElementById('trade-lock-btn').innerText = "Khóa Đề Xuất"; document.getElementById('trade-lock-btn').style.background = "#f1c40f";
+            }
+            updateLockUI(state[`${myTradeRole}_locked`], state[`${otherRole}_locked`]);
+            renderTradeZones();
+        });
+
+        function updateLockUI(myLocked, oppLocked) { document.getElementById('trade-lock-1').innerHTML = myLocked ? " 🔒" : ""; document.getElementById('trade-lock-2').innerHTML = oppLocked ? " 🔒" : ""; }
+        function cancelLiveTrade() { socket.emit('cancel_live_trade'); }
+        socket.on('close_live_trade', () => { document.getElementById('live-trade-modal').style.display = 'none'; });
+
+    </script>
+</body>
+</html>

@@ -1,0 +1,38 @@
+CHANCE_CARDS = [
+    {"action": "move", "target": 0, "text": "Đi đến ô Bắt đầu: Lĩnh lương 2.000.000đ"},
+    {"action": "move", "target": 39, "text": "Tiến đến Montreal"},
+    {"action": "move", "target": 24, "text": "Tiến đến London"},
+    {"action": "move", "target": 14, "text": "Tiến đến Toronto"},
+    {"action": "move", "target": 5, "text": "Đến trạm Monopoly Rail"},
+    {"action": "move_nearest_rail", "text": "Tiến đến trạm xe lửa gần nhất: Nếu chưa ai mua thì có thể mua, nếu đã có chủ thì trả tiền thuê."},
+    {"action": "move_nearest_util", "text": "Tiến đến Công ty Tiện ích gần nhất: Nếu chưa ai mua thì có thể mua, nếu có chủ thì trả tiền thuê."},
+    {"action": "back_3", "text": "Lùi lại 3 ô."},
+    {"action": "add_money", "amount": 500000, "text": "Ngân hàng trả cổ tức cho bạn: Nhận 500.000đ"},
+    {"action": "add_money", "amount": 1500000, "text": "Quỹ vay xây dựng đáo hạn: Nhận 1.500.000đ"},
+    {"action": "add_money", "amount": 1000000, "text": "Bạn trúng giải trò chơi ô chữ: Nhận 1.000.000đ"},
+    {"action": "maintenance", "text": "Bảo trì toàn bộ tài sản: Trả 250.000đ/nhà, 1.000.000đ/khách sạn."},
+    {"action": "pay_all", "amount": 500000, "text": "Bạn được bầu làm Chủ tịch hội đồng quản trị: Trả cho mỗi người chơi khác 500.000đ"},
+    {"action": "pay", "amount": 150000, "text": "Đóng thuế cho người nghèo: Mất 150.000đ"},
+    {"action": "go_jail", "text": "Vào Tù: Đi thẳng vào tù, không đi qua ô Bắt đầu, không nhận 2.000.000đ"},
+    {"action": "get_out_jail", "text": "Thẻ ra tù miễn phí: Bạn có thể giữ thẻ này cho đến khi cần dùng."}
+]
+
+--------------------------------------------------
+
+COMMUNITY_CHEST_CARDS = [
+    {"action": "move", "target": 0, "text": "Đi đến ô Bắt đầu: Lĩnh lương 2.000.000đ"},
+    {"action": "add_money", "amount": 2000000, "text": "Lỗi ngân hàng có lợi cho bạn: Nhận 2.000.000đ"},
+    {"action": "add_money", "amount": 1000000, "text": "Tiền đóng quỹ ngày lễ đáo hạn: Nhận 1.000.000đ"},
+    {"action": "add_money", "amount": 200000, "text": "Được hoàn thuế thu nhập: Nhận 200.000đ"},
+    {"action": "add_money", "amount": 100000, "text": "Đáo hạn bảo hiểm nhân thọ: Nhận 100.000đ"},
+    {"action": "add_money", "amount": 500000, "text": "Bán cổ phiếu: Nhận 500.000đ"},
+    {"action": "add_money", "amount": 250000, "text": "Nhận phí tư vấn: Nhận 250.000đ"},
+    {"action": "add_money", "amount": 1000000, "text": "Nhận tiền thừa kế: Nhận 1.000.000đ"},
+    {"action": "add_money", "amount": 100000, "text": "Đạt giải nhì cuộc thi sắc đẹp: Nhận 100.000đ"},
+    {"action": "collect_all", "amount": 100000, "text": "Đến ngày sinh nhật của bạn: Thu từ mỗi người chơi khác 100.000đ"},
+    {"action": "pay", "amount": 500000, "text": "Trả viện phí: Mất 500.000đ"},
+    {"action": "pay", "amount": 500000, "text": "Trả học phí: Mất 500.000đ"},
+    {"action": "maintenance", "text": "Sửa chữa đường phố: Trả 400.000đ/nhà, 1.150.000đ/khách sạn."},
+    {"action": "go_jail", "text": "Vào Tù: Đi thẳng vào tù, không đi qua ô Bắt đầu, không nhận 2.000.000đ"},
+    {"action": "get_out_jail", "text": "Thẻ ra tù miễn phí: Bạn có thể giữ thẻ này cho đến khi cần dùng."}
+]
